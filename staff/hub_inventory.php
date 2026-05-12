@@ -42,7 +42,6 @@ $inventory = $conn->query("
     LEFT JOIN RIDER rd ON da.Atmp_RdrID = rd.Rdr_ID
     $where
     AND o.Ord_Status NOT IN ('Delivered','RTS')
-    AND ('$hubArea' = '' OR r.Rcpt_Area LIKE '%$hubArea%' OR o.Ord_PickAddr LIKE '%$hubArea%' OR shpm.Shpm_HubID = '$hubId')
     ORDER BY o.Ord_CrtdDt DESC
 ");
 

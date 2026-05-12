@@ -17,6 +17,7 @@ $activePage = $activePage               ?? '';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+    <?php if (!empty($extraHead)) echo $extraHead; ?>
 
     <style>
         /* =============================================
@@ -138,13 +139,136 @@ $activePage = $activePage               ?? '';
             background: rgba(232,0,45,0.04);
         }
 
-        .notif-dot {
+        .notif-badge {
             position: absolute;
-            top: 7px; right: 7px;
-            width: 7px; height: 7px;
+            top: -5px; right: -5px;
+            min-width: 18px; height: 18px;
             background: var(--red);
+            color: #fff;
+            border-radius: 20px;
+            font-size: 10px;
+            font-weight: 700;
+            font-family: 'Sora', sans-serif;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+            border: 2px solid var(--surface);
+            z-index: 2;
+        }
+        .notif-badge.show { display: flex; }
+
+        /* Notification dropdown */
+        .notif-dropdown {
+            position: absolute;
+            top: calc(100% + 10px); right: 0;
+            width: 360px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            z-index: 9999;
+            opacity: 0;
+            transform: translateY(-6px);
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            overflow: hidden;
+        }
+        .notif-dropdown.open {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: all;
+        }
+        .notif-hdr {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid var(--border);
+        }
+        .notif-hdr-title {
+            font-family: 'Sora', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+        }
+        .notif-mark-all {
+            font-size: 11px;
+            color: var(--red);
+            font-weight: 600;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            transition: opacity 0.2s;
+        }
+        .notif-mark-all:hover { opacity: 0.7; }
+        .notif-list {
+            max-height: 380px;
+            overflow-y: auto;
+        }
+        .notif-item {
+            display: flex;
+            gap: 12px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: background 0.15s;
+            border-bottom: 1px solid var(--border);
+            text-decoration: none;
+            color: var(--ink);
+        }
+        .notif-item:last-child { border-bottom: none; }
+        .notif-item:hover { background: rgba(232,0,45,0.03); }
+        .notif-item.unread { background: rgba(232,0,45,0.04); }
+        .notif-item.unread:hover { background: rgba(232,0,45,0.07); }
+        .notif-icon-wrap {
+            width: 36px; height: 36px;
             border-radius: 50%;
-            border: 1.5px solid var(--surface);
+            background: rgba(232,0,45,0.08);
+            color: var(--red);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 15px;
+            flex-shrink: 0;
+        }
+        .notif-item-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 2px;
+            line-height: 1.3;
+        }
+        .notif-item-body {
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .notif-item-ago {
+            font-size: 11px;
+            color: var(--muted-2);
+            margin-top: 4px;
+        }
+        .notif-unread-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            background: var(--red);
+            flex-shrink: 0;
+            margin-top: 5px;
+        }
+        .notif-empty {
+            padding: 40px 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 13px;
+        }
+        .notif-footer {
+            padding: 10px 16px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 12px;
+            color: var(--muted);
         }
 
         /* User avatar button */
@@ -963,6 +1087,12 @@ $activePage = $activePage               ?? '';
             Reports
         </a>
 
+        <a href="/ninjavan/rider/live_map.php"
+           class="sb-link <?= $activePage === 'map' ? 'active' : '' ?>">
+            <span class="sb-icon"><i class="bi bi-geo-alt-fill"></i></span>
+            Live Map
+        </a>
+
         <?php elseif($role === 'staff'): ?>
         <!-- ===== STAFF NAV ===== -->
         <div class="sb-section-label">Overview</div>
@@ -1055,6 +1185,12 @@ $activePage = $activePage               ?? '';
             History
         </a>
 
+        <a href="/ninjavan/rider/live_map.php"
+           class="sb-link <?= $activePage === 'map' ? 'active' : '' ?>">
+            <span class="sb-icon"><i class="bi bi-geo-alt-fill"></i></span>
+            Live Map
+        </a>
+
         <?php endif; ?>
 
         <div class="sb-divider"></div>
@@ -1092,11 +1228,25 @@ $activePage = $activePage               ?? '';
     </div>
 
     <div class="topbar-right">
-        <!-- Notification -->
-        <button class="topbar-icon-btn">
-            <i class="bi bi-bell"></i>
-            <span class="notif-dot"></span>
-        </button>
+        <!-- Notification Bell -->
+        <div style="position:relative;" id="notifWrap">
+            <button class="topbar-icon-btn" id="notifBtn" onclick="toggleNotifDropdown()" aria-label="Notifications">
+                <i class="bi bi-bell" id="notifBellIcon"></i>
+                <span class="notif-badge" id="notifBadge"></span>
+            </button>
+
+            <!-- Dropdown -->
+            <div class="notif-dropdown" id="notifDropdown">
+                <div class="notif-hdr">
+                    <span class="notif-hdr-title">Notifications <span id="notifCount" style="color:var(--muted);font-weight:500;"></span></span>
+                    <button class="notif-mark-all" onclick="markAllRead()">Mark all as read</button>
+                </div>
+                <div class="notif-list" id="notifList">
+                    <div class="notif-empty"><i class="bi bi-bell-slash" style="font-size:26px;display:block;margin-bottom:6px;"></i>Loading...</div>
+                </div>
+                <div class="notif-footer">Only showing last 30 notifications</div>
+            </div>
+        </div>
 
         <!-- User dropdown -->
         <div class="dropdown">
@@ -1144,22 +1294,24 @@ $activePage = $activePage               ?? '';
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// Show toast from session
-<?php if(isset($_SESSION['toast_success'])): ?>
-showToast('<?= addslashes($_SESSION['toast_success']) ?>', 'success');
-<?php unset($_SESSION['toast_success']); endif; ?>
-<?php if(isset($_SESSION['toast_error'])): ?>
-showToast('<?= addslashes($_SESSION['toast_error']) ?>', 'error');
-<?php unset($_SESSION['toast_error']); endif; ?>
-
+// ─── Toast ───────────────────────────────────────────────────────────────────
 function showToast(msg, type = 'success'){
     const wrap = document.getElementById('toastWrap');
+    if (!wrap) return;
     const t = document.createElement('div');
     t.className = 'nv-toast' + (type === 'error' ? ' error' : '');
     t.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle-fill' : 'exclamation-circle-fill'}"></i> ${msg}`;
     wrap.appendChild(t);
     setTimeout(() => { t.style.opacity='0'; t.style.transform='translateY(8px)'; t.style.transition='all 0.3s'; setTimeout(()=>t.remove(), 300); }, 3500);
 }
+
+// Show session toasts after function is defined
+<?php if(isset($_SESSION['toast_success'])): ?>
+showToast('<?= addslashes($_SESSION['toast_success']) ?>', 'success');
+<?php unset($_SESSION['toast_success']); endif; ?>
+<?php if(isset($_SESSION['toast_error'])): ?>
+showToast('<?= addslashes($_SESSION['toast_error']) ?>', 'error');
+<?php unset($_SESSION['toast_error']); endif; ?>
 
 function toggleSidebar(){
     document.querySelector('.nv-sidebar').classList.toggle('open');
@@ -1169,4 +1321,137 @@ function closeSidebar(){
     document.querySelector('.nv-sidebar').classList.remove('open');
     document.getElementById('sbOverlay').classList.remove('show');
 }
+
+// ─── Notification Bell ───────────────────────────────────────────────────────
+let notifOpen = false;
+let notifLoaded = false;
+
+function toggleNotifDropdown() {
+    notifOpen = !notifOpen;
+    document.getElementById('notifDropdown').classList.toggle('open', notifOpen);
+    if (notifOpen && !notifLoaded) {
+        fetchNotifications();
+        notifLoaded = true;
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+    if (notifOpen && !document.getElementById('notifWrap').contains(e.target)) {
+        notifOpen = false;
+        document.getElementById('notifDropdown').classList.remove('open');
+    }
+});
+
+async function fetchNotifications() {
+    try {
+        const res  = await fetch('/ninjavan/api/notifications.php?action=list&_=' + Date.now());
+        const data = await res.json();
+        if (data.error) return;
+        renderNotifications(data);
+    } catch(e) { console.warn('Notification fetch failed', e); }
+}
+
+function renderNotifications(data) {
+    const badge   = document.getElementById('notifBadge');
+    const bellIcon = document.getElementById('notifBellIcon');
+    const countEl = document.getElementById('notifCount');
+    const listEl  = document.getElementById('notifList');
+
+    // Badge
+    if (data.unread > 0) {
+        badge.textContent = data.unread > 99 ? '99+' : data.unread;
+        badge.classList.add('show');
+        bellIcon.className = 'bi bi-bell-fill';
+        bellIcon.style.color = 'var(--red)';
+    } else {
+        badge.classList.remove('show');
+        bellIcon.className = 'bi bi-bell';
+        bellIcon.style.color = '';
+    }
+
+    countEl.textContent = data.unread > 0 ? `(${data.unread} unread)` : '';
+
+    if (!data.notifications || data.notifications.length === 0) {
+        listEl.innerHTML = `<div class="notif-empty">
+            <i class="bi bi-bell-slash" style="font-size:26px;display:block;margin-bottom:6px;"></i>
+            You have no notifications
+        </div>`;
+        return;
+    }
+
+    let html = '';
+    data.notifications.forEach(n => {
+        const unreadClass = !n.is_read ? 'unread' : '';
+        const linkAttr    = n.link ? `href="${n.link}"` : 'href="#"';
+        html += `
+        <a ${linkAttr} class="notif-item ${unreadClass}" onclick="markRead(${n.id})">
+            <div class="notif-icon-wrap"><i class="bi bi-${n.icon || 'bell'}"></i></div>
+            <div style="flex:1;min-width:0;">
+                <div class="notif-item-title">${n.title}</div>
+                <div class="notif-item-body">${n.body}</div>
+                <div class="notif-item-ago"><i class="bi bi-clock"></i> ${n.ago}</div>
+            </div>
+            ${!n.is_read ? '<div class="notif-unread-dot"></div>' : ''}
+        </a>`;
+    });
+    listEl.innerHTML = html;
+}
+
+async function markRead(id) {
+    const fd = new FormData();
+    fd.append('action', 'mark_read');
+    fd.append('id', id);
+    await fetch('/ninjavan/api/notifications.php', { method: 'POST', body: fd });
+    // Mark item as read visually
+    const items = document.querySelectorAll('.notif-item.unread');
+    items.forEach(el => {
+        if (el.querySelector('.notif-unread-dot')) {
+            // will be refreshed on next open
+        }
+    });
+    notifLoaded = false; // force re-fetch on next open
+}
+
+async function markAllRead() {
+    const fd = new FormData();
+    fd.append('action', 'mark_read');
+    await fetch('/ninjavan/api/notifications.php', { method: 'POST', body: fd });
+    // Refresh UI
+    document.getElementById('notifBadge').classList.remove('show');
+    document.getElementById('notifBellIcon').className = 'bi bi-bell';
+    document.getElementById('notifBellIcon').style.color = '';
+    document.getElementById('notifCount').textContent = '';
+    document.querySelectorAll('.notif-item.unread').forEach(el => {
+        el.classList.remove('unread');
+        const dot = el.querySelector('.notif-unread-dot');
+        if (dot) dot.remove();
+    });
+    showToast('All notifications marked as read', 'success');
+}
+
+// Auto-poll unread count every 60 seconds (without opening dropdown)
+setInterval(async () => {
+    if (notifOpen) return;
+    try {
+        const res  = await fetch('/ninjavan/api/notifications.php?action=list&_=' + Date.now());
+        const data = await res.json();
+        if (!data.error) {
+            const badge = document.getElementById('notifBadge');
+            if (data.unread > 0) {
+                badge.textContent = data.unread > 99 ? '99+' : data.unread;
+                badge.classList.add('show');
+                document.getElementById('notifBellIcon').className = 'bi bi-bell-fill';
+                document.getElementById('notifBellIcon').style.color = 'var(--red)';
+            } else {
+                badge.classList.remove('show');
+                document.getElementById('notifBellIcon').className = 'bi bi-bell';
+                document.getElementById('notifBellIcon').style.color = '';
+            }
+        }
+    } catch(e) {}
+}, 60000);
+
+// Initial badge load (no dropdown open)
+fetchNotifications();
 </script>

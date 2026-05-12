@@ -65,8 +65,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['dispatch'])) {
 $hubData = $conn->query("SELECT Hub_Area FROM HUB WHERE Hub_ID = '$hubId'")->fetch_assoc();
 $hubArea = $conn->real_escape_string($hubData['Hub_Area'] ?? '');
 
-// Get Orders needing dispatch (Staging status)
-// Filtered by Hub Area
+// Get ALL Staging orders (no area filter — hub_area city names don't map to recipient region names)
 $orders = $conn->query("
     SELECT o.*, p.Pcl_Wght, r.Rcpt_Name, r.Rcpt_Area, s.Svc_Name, aw.AWB_TrkNum, sh.Shpr_PickAddr
     FROM `ORDER` o
@@ -76,15 +75,15 @@ $orders = $conn->query("
     JOIN SHIPPER sh ON o.Ord_ShprID = sh.Shpr_ID
     LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
     WHERE o.Ord_Status = 'Staging'
-      AND ('$hubArea' = '' OR r.Rcpt_Area LIKE '%$hubArea%' OR o.Ord_PickAddr LIKE '%$hubArea%')
     ORDER BY o.Ord_CrtdDt ASC
 ");
 
-// Get Available Riders for this Hub
-$riders = $conn->query("SELECT * FROM RIDER WHERE Rdr_HubID = '$hubId' AND Rdr_Status = 'Active'");
+// Get Available Riders — show ALL active riders so staff can always dispatch
+$riders = $conn->query("SELECT rd.*, h.Hub_Name FROM RIDER rd LEFT JOIN HUB h ON h.Hub_ID = rd.Rdr_HubID WHERE rd.Rdr_Status = 'Active' ORDER BY h.Hub_Name, rd.Rdr_Name");
 $riderOptions = "";
 while($r = $riders->fetch_assoc()) {
-    $riderOptions .= "<option value='{$r['Rdr_ID']}'>{$r['Rdr_Name']} ({$r['Rdr_VhcTyp']})</option>";
+    $hubLabel = $r['Hub_Name'] ? " [{$r['Hub_Name']}]" : '';
+    $riderOptions .= "<option value='{$r['Rdr_ID']}'>{$r['Rdr_Name']} ({$r['Rdr_VhcTyp']}){$hubLabel}</option>";
 }
 
 include "../layout/dashboard_layout.php";
