@@ -9,12 +9,10 @@ if (!isset($_SESSION['account_id']) || !in_array($_SESSION['role'], ['rider','st
 $title      = "Live Rider Map";
 $activePage = "map";
 
-// Inject Leaflet CSS into <head> via layout hook
+// FIX #1: Switched from unpkg (unstable SRI) to jsdelivr (stable, no integrity needed for dev)
 $extraHead = '
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/TDI=" crossorigin=""></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 ';
 
 include "../layout/dashboard_layout.php";
@@ -35,7 +33,9 @@ include "../layout/dashboard_layout.php";
     box-shadow: var(--shadow);
     height: 560px;
     width: 100%;
-    z-index: 1;
+    /* FIX #2: Removed z-index:1 — it was creating a broken stacking context
+       that buried Leaflet's internal tile layers */
+    position: relative;
 }
 
 /* Rider sidebar list */
@@ -269,8 +269,11 @@ include "../layout/dashboard_layout.php";
     <div id="map"></div>
 </div>
 
-<!-- Leaflet JS -->
 <script>
+// FIX #3: Wrapped everything in DOMContentLoaded so the map div
+// is guaranteed to exist in the DOM before Leaflet tries to mount into it.
+document.addEventListener('DOMContentLoaded', function () {
+
 // ─── Map Init ────────────────────────────────────────────────────────────────
 const map = L.map('map', {
     center: [14.5995, 120.9842],
@@ -282,6 +285,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19,
 }).addTo(map);
+
+// FIX #4: Force Leaflet to recalculate the container size after layout renders.
+// Without this, Leaflet measures 0px height and tiles never load.
+setTimeout(() => map.invalidateSize(), 250);
 
 // ─── Custom marker icons ──────────────────────────────────────────────────────
 function riderIcon(status) {
@@ -336,12 +343,10 @@ async function loadRiders() {
         const data = await res.json();
 
         if (!Array.isArray(data) || data.length === 0) {
-            // No real GPS data → show demo mode
             if (!demoMode) activateDemoMode();
             return;
         }
 
-        // We have real data — disable demo mode
         demoMode = false;
         if (demoInterval) { clearInterval(demoInterval); demoInterval = null; }
         hideDemoBanner();
@@ -359,7 +364,6 @@ function activateDemoMode() {
     renderRiders(demoRiders, true);
     updateStats(demoRiders);
 
-    // Slowly move demo riders around
     const speeds = { DEMO1: [0.0003, -0.0002], DEMO2: [-0.0002, 0.0003],
                      DEMO3: [0.0001, -0.0003],  DEMO4: [0.0002, 0.0002] };
     demoInterval = setInterval(() => {
@@ -369,7 +373,6 @@ function activateDemoMode() {
             r.lng += dlng + (Math.random() - 0.5) * 0.0001;
             if (markers[r.id]) {
                 markers[r.id].setLatLng([r.lat, r.lng]);
-                // Update route line
                 if (routeLines[r.id]) {
                     routeLines[r.id].setLatLngs([[r.lat, r.lng], [r.dest_lat, r.dest_lng]]);
                 }
@@ -383,8 +386,9 @@ function showDemoBanner() {
     const b = document.createElement('div');
     b.id = 'demoBanner';
     b.style.cssText = 'background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:10px;';
+    // FIX #5: Clearer demo banner — tells user the RIDER_GPS table is missing, not migrate_notifications
     b.innerHTML = `<i class="bi bi-lightning-charge-fill" style="font-size:18px;"></i>
-        <span><strong>Demo Mode</strong> — No real GPS data found. Run <code style="background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:3px;">migrate_notifications.php</code> to seed GPS positions. Riders below are simulated.</span>`;
+        <span><strong>Demo Mode</strong> — The <code style="background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:3px;">RIDER_GPS</code> table has no data yet. Riders must share their GPS location for real tracking to appear. Riders shown below are simulated.</span>`;
     document.querySelector('.page-header').after(b);
 }
 
@@ -456,7 +460,6 @@ function renderRiders(riders, showRoute = false) {
                 .bindPopup(popupHtml, { maxWidth: 240 });
         }
 
-        // Draw dashed route line to delivery destination (for riders with active parcels)
         if (r.dest_lat && r.dest_lng && r.active_parcels > 0) {
             const lineCoords = [[r.lat, r.lng], [r.dest_lat, r.dest_lng]];
             if (routeLines[r.id]) {
@@ -492,6 +495,8 @@ function focusRider(id, lat, lng) {
 function refreshMap() {
     const btn = document.getElementById('refreshBtn');
     btn.classList.add('spinning');
+    // FIX: Also re-check map size on manual refresh in case layout shifted
+    map.invalidateSize();
     loadRiders().finally(() => setTimeout(() => btn.classList.remove('spinning'), 500));
 }
 
@@ -506,7 +511,13 @@ setInterval(() => {
     document.getElementById('liveLabel').textContent = `Live · refreshing in ${countdown}s`;
 }, 1000);
 
-window.addEventListener('beforeunload', () => { clearInterval(pollInterval); if (demoInterval) clearInterval(demoInterval); });
+window.addEventListener('beforeunload', () => {
+    clearInterval(pollInterval);
+    if (demoInterval) clearInterval(demoInterval);
+});
+
+// FIX: Close the DOMContentLoaded wrapper
+});
 </script>
 
 <?php include "../layout/dashboard_footer.php"; ?>

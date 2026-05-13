@@ -10,7 +10,6 @@ header('Cache-Control: no-store');
 // ── Check that RIDER_GPS table exists ─────────────────────────────────────────
 $tableCheck = $conn->query("SHOW TABLES LIKE 'RIDER_GPS'");
 if (!$tableCheck || $tableCheck->num_rows === 0) {
-    // Table doesn't exist yet — return empty array so the map still loads
     echo json_encode([]);
     exit;
 }
@@ -21,18 +20,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_SESSION['rider_id'])) {
         echo json_encode(['error' => 'unauthorized']); exit;
     }
-    $rid = $conn->real_escape_string($_SESSION['rider_id']);
+
+    $rid = $_SESSION['rider_id'];
     $lat = (float)($_POST['lat'] ?? 0);
     $lng = (float)($_POST['lng'] ?? 0);
+
     if ($lat && $lng) {
-        $conn->query("INSERT INTO RIDER_GPS (GPS_RdrID, GPS_Lat, GPS_Lng)
-                      VALUES ('$rid', $lat, $lng)
-                      ON DUPLICATE KEY UPDATE GPS_Lat=$lat, GPS_Lng=$lng, GPS_UpdatedAt=NOW()");
+        // FIX: Use prepared statement instead of string interpolation
+        $stmt = $conn->prepare(
+            "INSERT INTO RIDER_GPS (GPS_RdrID, GPS_Lat, GPS_Lng)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE GPS_Lat = ?, GPS_Lng = ?, GPS_UpdatedAt = NOW()"
+        );
+        $stmt->bind_param("sdddd", $rid, $lat, $lng, $lat, $lng);
+        $stmt->execute();
+        $stmt->close();
     }
     echo json_encode(['ok' => true]); exit;
 }
 
-// ── GET: return all rider positions updated within last 2 hours ───────────────
+// ── GET: return all rider positions updated within last 24 hours ───────────────
 $res = $conn->query("
     SELECT r.Rdr_ID, r.Rdr_Name, r.Rdr_VhcTyp, r.Rdr_Status,
            h.Hub_Name,
@@ -41,8 +48,8 @@ $res = $conn->query("
            DATE_FORMAT(g.GPS_UpdatedAt, '%b %e, %l:%i %p') AS updated_at,
            TIMESTAMPDIFF(MINUTE, g.GPS_UpdatedAt, NOW()) AS age_min,
            (SELECT COUNT(*) FROM DELIVERY_ATTEMPT da
-            JOIN SHIPMENT s ON da.Atmp_ShpmID=s.Shpm_ID
-            WHERE da.Atmp_RdrID=r.Rdr_ID
+            JOIN SHIPMENT s ON da.Atmp_ShpmID = s.Shpm_ID
+            WHERE da.Atmp_RdrID = r.Rdr_ID
               AND s.Shpm_Status IN ('In Transit','Out for Delivery','Pending Pickup')) AS active_parcels
     FROM RIDER r
     JOIN RIDER_GPS g   ON g.GPS_RdrID  = r.Rdr_ID
@@ -59,7 +66,7 @@ if (!$res) {
 
 $riders = [];
 while ($row = $res->fetch_assoc()) {
-    $age = (int)$row['age_min'];
+    $age    = (int)$row['age_min'];
     $status = $age < 5 ? 'online' : ($age < 30 ? 'idle' : 'offline');
     $riders[] = [
         'id'             => $row['Rdr_ID'],
