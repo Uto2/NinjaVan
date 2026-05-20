@@ -1054,6 +1054,12 @@ $activePage = $activePage               ?? '';
             Staff
         </a>
 
+        <a href="/ninjavan/admin/manage_hubs.php"
+           class="sb-link <?= $activePage === 'hubs' ? 'active' : '' ?>">
+            <span class="sb-icon"><i class="bi bi-geo-fill"></i></span>
+            Hubs / Branches
+        </a>
+
         <a href="/ninjavan/admin/manage_parcels.php"
            class="sb-link <?= $activePage === 'parcels' ? 'active' : '' ?>">
             <span class="sb-icon"><i class="bi bi-boxes"></i></span>
@@ -1148,12 +1154,29 @@ $activePage = $activePage               ?? '';
         </a>
 
         <a href="/ninjavan/shipper/track_parcel.php"
-           class="sb-link <?= $activePage === 'track' ? 'active' : '' ?>">
-            <span class="sb-icon"><i class="bi bi-geo-alt-fill"></i></span>
-            Track Parcel
-        </a>
-
-        <?php elseif($role === 'rider'): ?>
+            class="sb-link <?= $activePage === 'track' ? 'active' : '' ?>">
+             <span class="sb-icon"><i class="bi bi-geo-alt-fill"></i></span>
+             Track Parcel
+          </a>
+ 
+          <a href="/ninjavan/shipper/track_rider.php"
+             class="sb-link <?= $activePage === 'track_rider' ? 'active' : '' ?>">
+              <span class="sb-icon"><i class="bi bi-broadcast-pin"></i></span>
+              Track My Rider
+              <?php
+             if (isset($conn) && isset($_SESSION['shipper_id'])) {
+                 $sid   = $_SESSION['shipper_id'];
+                  $livex = $conn->query("
+                      SELECT COUNT(*) as c FROM `ORDER` o
+                      WHERE o.Ord_ShprID = '$sid' AND o.Ord_Status = 'Out for Delivery'
+                  ");
+                  $lc = $livex ? ((int)$livex->fetch_assoc()['c']) : 0;
+                  if ($lc > 0) echo "<span class='sb-badge' style='background:var(--green);'>LIVE</span>";
+              }
+              ?>
+          </a>
+ 
+          <?php elseif($role === 'rider'): ?>
         <!-- ===== RIDER NAV ===== -->
         <div class="sb-section-label">Overview</div>
 

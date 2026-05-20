@@ -11,12 +11,14 @@ $activePage = "staff";
 
 // ---- HANDLE ADD STAFF ----
 if(isset($_POST['add_staff'])){
-    $name    = $conn->real_escape_string(trim($_POST['name']));
-    $email   = $conn->real_escape_string(trim($_POST['email']));
-    $phone   = $conn->real_escape_string(trim($_POST['phone']));
-    $hubId   = $conn->real_escape_string($_POST['hub_id']);
-    $role    = $conn->real_escape_string($_POST['staff_role']);
-    $pass    = password_hash($_POST['password'], PASSWORD_BCRYPT);
+    $firstName = $conn->real_escape_string(trim($_POST['first_name']));
+    $lastName  = $conn->real_escape_string(trim($_POST['last_name']));
+    $name      = $firstName . ' ' . $lastName;
+    $email     = $conn->real_escape_string(trim($_POST['email']));
+    $phone     = $conn->real_escape_string(trim($_POST['phone']));
+    $hubId     = $conn->real_escape_string($_POST['hub_id']);
+    $role      = $conn->real_escape_string($_POST['staff_role']);
+    $pass      = password_hash($_POST['password'], PASSWORD_BCRYPT);
 
     // Check email uniqueness
     $chk = $conn->query("SELECT Usr_ID FROM USER_ACCOUNT WHERE Usr_Email='$email'");
@@ -235,10 +237,17 @@ include "../layout/dashboard_layout.php";
         <form method="POST" style="padding:24px;">
             <div class="row g-3">
 
-                <div class="col-12">
+                <div class="col-md-6">
                     <div class="nv-form-group">
-                        <label>Full Name</label>
-                        <input type="text" name="name" class="nv-input" placeholder="e.g. Maria Santos" required>
+                        <label>First Name</label>
+                        <input type="text" name="first_name" class="nv-input" placeholder="e.g. Maria" required>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="nv-form-group">
+                        <label>Last Name</label>
+                        <input type="text" name="last_name" class="nv-input" placeholder="e.g. Santos" required>
                     </div>
                 </div>
 

@@ -407,6 +407,64 @@ include("layout/layout.php");
     background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.12) 1px, transparent 0);
     background-size: 24px 24px;
 }
+
+/* ===========================
+   RIDER RECRUITMENT BANNER
+   =========================== */
+.nv-rider-banner {
+    background: var(--nv-surface-2);
+    border-top: 1px solid var(--nv-border);
+    border-bottom: 1px solid var(--nv-border);
+    padding: 60px 0;
+    position: relative;
+    overflow: hidden;
+}
+.nv-rider-card {
+    background: var(--nv-surface);
+    border: 1px solid var(--nv-border);
+    border-radius: var(--radius-lg);
+    padding: 40px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 30px;
+    position: relative;
+    z-index: 2;
+}
+.nv-rider-text {
+    flex: 1;
+    min-width: 300px;
+}
+.nv-rider-title {
+    font-size: clamp(24px, 3vw, 32px);
+    font-weight: 800;
+    color: var(--nv-ink);
+    margin-bottom: 10px;
+}
+.nv-rider-desc {
+    color: var(--nv-muted);
+    font-size: 15px;
+    line-height: 1.6;
+    margin: 0;
+    max-width: 600px;
+}
+.nv-rider-action {
+    flex-shrink: 0;
+}
+.nv-rider-badge {
+    background: rgba(232,0,45,0.08);
+    color: var(--nv-red);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    padding: 6px 14px;
+    border-radius: 50px;
+    display: inline-block;
+    margin-bottom: 15px;
+    letter-spacing: 0.05em;
+}
 </style>
 
 <!-- ===========================
@@ -656,6 +714,29 @@ include("layout/layout.php");
             </div>
             <?php endforeach; ?>
 
+        </div>
+    </div>
+</section>
+
+
+<!-- ===========================
+     RIDER RECRUITMENT
+=========================== -->
+<section class="nv-rider-banner">
+    <div class="container">
+        <div class="nv-rider-card">
+            <div class="nv-rider-text">
+                <span class="nv-rider-badge"><i class="bi bi-bicycle me-1"></i> Ride With Us</span>
+                <h3 class="nv-rider-title">Want to be a Rider? Apply Now!</h3>
+                <p class="nv-rider-desc">
+                    Be your own boss and earn competitive rates. Join our growing fleet of delivery riders across the Philippines. Flexible hours, great rewards, and support at every step.
+                </p>
+            </div>
+            <div class="nv-rider-action">
+                <a href="/ninjavan/auth/register_rider.php" class="btn-nv" style="font-size:16px; padding:14px 32px;">
+                    Apply to Ride <i class="bi bi-arrow-right ms-2"></i>
+                </a>
+            </div>
         </div>
     </div>
 </section>

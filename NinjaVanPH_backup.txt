@@ -1,0 +1,380 @@
+-- ============================================================
+-- NinjaVan PH — Database Backup
+-- Generated : 2026-05-13 15:29:35
+-- Database  : NinjaVanPH
+-- ============================================================
+
+SET FOREIGN_KEY_CHECKS=0;
+SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';
+SET NAMES utf8mb4;
+
+CREATE DATABASE IF NOT EXISTS `NinjaVanPH` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `NinjaVanPH`;
+
+-- ------------------------------------------------------------
+-- Table: `admin_account`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `admin_account`;
+CREATE TABLE `admin_account` (
+  `Adm_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Adm_Name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Adm_Email` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Adm_Pass` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`Adm_ID`),
+  UNIQUE KEY `Adm_Email` (`Adm_Email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `admin_account` (`Adm_ID`, `Adm_Name`, `Adm_Email`, `Adm_Pass`) VALUES
+  ('ADM00001', 'Super Admin', 'admin@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6');
+
+-- ------------------------------------------------------------
+-- Table: `airway_bill`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `airway_bill`;
+CREATE TABLE `airway_bill` (
+  `AWB_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `AWB_TrkNum` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `AWB_OrdID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `AWB_PrtDt` datetime DEFAULT NULL COMMENT 'Print date',
+  `AWB_PrtFmt` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'e.g. Thermal, A4',
+  `AWB_BrCode` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Barcode / QR value',
+  PRIMARY KEY (`AWB_ID`),
+  UNIQUE KEY `AWB_TrkNum` (`AWB_TrkNum`),
+  KEY `fk_awb_order` (`AWB_OrdID`),
+  CONSTRAINT `fk_awb_order` FOREIGN KEY (`AWB_OrdID`) REFERENCES `order` (`Ord_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `airway_bill` (`AWB_ID`, `AWB_TrkNum`, `AWB_OrdID`, `AWB_PrtDt`, `AWB_PrtFmt`, `AWB_BrCode`) VALUES
+  ('AWB00001', 'NVPH8427A1BF', 'ORD00001', '2026-05-12 17:28:02', 'Thermal', 'NVPH8427A1BF'),
+  ('AWB00002', 'NVPHA1E1D7D5', 'ORD00002', '2026-05-12 18:36:04', 'Thermal', 'NVPHA1E1D7D5'),
+  ('AWB00003', 'NVPH09696557', 'ORD00003', '2026-05-12 18:53:37', 'Thermal', 'NVPH09696557'),
+  ('AWB00004', 'NVPHF2A7C897', 'ORD00004', '2026-05-12 19:10:54', 'Thermal', 'NVPHF2A7C897');
+
+-- ------------------------------------------------------------
+-- Table: `delivery_attempt`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `delivery_attempt`;
+CREATE TABLE `delivery_attempt` (
+  `Atmp_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Atmp_RdrID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Atmp_ShpmID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Atmp_Rslt` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending',
+  `Atmp_FailRsn` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Atmp_Sign` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Atmp_Notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Atmp_Date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`Atmp_ID`),
+  KEY `fk_attempt_rider` (`Atmp_RdrID`),
+  KEY `fk_attempt_shipment` (`Atmp_ShpmID`),
+  CONSTRAINT `fk_attempt_rider` FOREIGN KEY (`Atmp_RdrID`) REFERENCES `rider` (`Rdr_ID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_attempt_shipment` FOREIGN KEY (`Atmp_ShpmID`) REFERENCES `shipment` (`Shpm_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `delivery_attempt` (`Atmp_ID`, `Atmp_RdrID`, `Atmp_ShpmID`, `Atmp_Rslt`, `Atmp_FailRsn`, `Atmp_Sign`, `Atmp_Notes`, `Atmp_Date`) VALUES
+  ('ATM00001', 'RDR00001', 'SHP00001', 'Successful', 'No one home', 'Kapoy', NULL, '2026-05-12 17:33:35'),
+  ('ATM00002', 'RDR00001', 'SHP00002', 'Successful', 'No one home', 'dasdas', NULL, '2026-05-12 19:20:48'),
+  ('ATM00003', 'RDR00001', 'SHP00003', 'Successful', 'No one home', 'Kigwa', NULL, '2026-05-12 19:18:01');
+
+-- ------------------------------------------------------------
+-- Table: `hub`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `hub`;
+CREATE TABLE `hub` (
+  `Hub_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Hub_Name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Hub_Addr` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Hub_Phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Hub_Type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'Distribution Center',
+  `Hub_Area` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`Hub_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `hub` (`Hub_ID`, `Hub_Name`, `Hub_Addr`, `Hub_Phone`, `Hub_Type`, `Hub_Area`) VALUES
+  ('HUB00001', 'Makati Main Hub', 'Ayala Ave, Makati City', '09171234567', 'Distribution Center', 'Metro Manila'),
+  ('HUB00002', 'QC North Hub', 'Quezon Ave, Quezon City', '09181234567', 'Sorting Hub', 'Metro Manila'),
+  ('HUB00003', 'Cebu Hub', 'N. Bacalso Ave, Cebu City', '09191234567', 'Distribution Center', 'Cebu'),
+  ('HUB00004', 'Davao Southern Hub', 'Quimpo Blvd, Davao City', '09201234567', 'Sorting Hub', 'Davao');
+
+-- ------------------------------------------------------------
+-- Table: `notification`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `notification`;
+CREATE TABLE `notification` (
+  `Notif_ID` int NOT NULL AUTO_INCREMENT,
+  `Notif_UsrID` varchar(20) NOT NULL,
+  `Notif_Title` varchar(120) NOT NULL,
+  `Notif_Body` varchar(500) NOT NULL,
+  `Notif_Type` enum('order','dispatch','delivery','system','alert') DEFAULT 'system',
+  `Notif_Icon` varchar(60) DEFAULT 'bell',
+  `Notif_Link` varchar(255) DEFAULT NULL,
+  `Notif_IsRead` tinyint(1) DEFAULT '0',
+  `Notif_CreatedAt` datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`Notif_ID`),
+  KEY `idx_user` (`Notif_UsrID`),
+  KEY `idx_read` (`Notif_IsRead`)
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO `notification` (`Notif_ID`, `Notif_UsrID`, `Notif_Title`, `Notif_Body`, `Notif_Type`, `Notif_Icon`, `Notif_Link`, `Notif_IsRead`, `Notif_CreatedAt`) VALUES
+  ('1', 'USR00001', '✅ Parcel Picked Up', 'Your parcel has been picked up and is In Transit.', 'delivery', 'truck', '/ninjavan/shipper/my_orders.php', '0', '2026-05-13 01:09:15'),
+  ('2', 'USR00001', '📬 Delivery Attempted', 'Delivery attempt was made for your parcel. Recipient was unavailable.', 'delivery', 'geo-alt-fill', '/ninjavan/shipper/track_parcel.php', '0', '2026-05-13 01:09:15'),
+  ('3', 'USR00001', '🎉 Delivered Successfully', 'Your parcel has been successfully delivered!', 'delivery', 'check-circle-fill', '/ninjavan/shipper/my_orders.php', '0', '2026-05-13 01:09:15'),
+  ('4', 'USR00002', '✅ Parcel Picked Up', 'Your parcel has been picked up and is In Transit.', 'delivery', 'truck', '/ninjavan/shipper/my_orders.php', '0', '2026-05-13 01:09:15'),
+  ('5', 'USR00002', '📬 Delivery Attempted', 'Delivery attempt was made for your parcel. Recipient was unavailable.', 'delivery', 'geo-alt-fill', '/ninjavan/shipper/track_parcel.php', '0', '2026-05-13 01:09:15'),
+  ('6', 'USR00002', '🎉 Delivered Successfully', 'Your parcel has been successfully delivered!', 'delivery', 'check-circle-fill', '/ninjavan/shipper/my_orders.php', '0', '2026-05-13 01:09:15'),
+  ('7', 'USR00003', '🛵 New Parcel Assigned', 'A new parcel has been dispatched to you. Check your deliveries.', 'dispatch', 'truck', '/ninjavan/rider/my_deliveries.php', '1', '2026-05-13 01:09:15'),
+  ('8', 'USR00003', '⚠️ Delivery Attempt Logged', 'Your delivery attempt for TRK-000123 has been recorded.', 'delivery', 'exclamation-triangle-fill', '/ninjavan/rider/history.php', '1', '2026-05-13 01:09:15'),
+  ('9', 'USR00004', '🛵 New Parcel Assigned', 'A new parcel has been dispatched to you. Check your deliveries.', 'dispatch', 'truck', '/ninjavan/rider/my_deliveries.php', '0', '2026-05-13 01:09:15'),
+  ('10', 'USR00004', '⚠️ Delivery Attempt Logged', 'Your delivery attempt for TRK-000123 has been recorded.', 'delivery', 'exclamation-triangle-fill', '/ninjavan/rider/history.php', '0', '2026-05-13 01:09:15'),
+  ('11', 'USR00005', '📦 3 Parcels Need Dispatch', 'You have 3 parcels waiting to be assigned to a rider.', 'dispatch', 'send-check-fill', '/ninjavan/staff/dispatch.php', '0', '2026-05-13 01:09:15'),
+  ('12', 'USR00005', '🧾 Walk-in Booking Received', 'A new walk-in booking was submitted at your hub.', 'order', 'person-plus-fill', '/ninjavan/staff/hub_inventory.php', '0', '2026-05-13 01:09:15');
+
+-- ------------------------------------------------------------
+-- Table: `order`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `order`;
+CREATE TABLE `order` (
+  `Ord_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Ord_ShprID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Ord_PclID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Ord_SvcID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Ord_Status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Staging',
+  `Ord_PickPref` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'Hub Dropoff',
+  `Ord_PickAddr` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Ord_PickDt` date DEFAULT NULL,
+  `Ord_CrtdDt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`Ord_ID`),
+  KEY `fk_order_shipper` (`Ord_ShprID`),
+  KEY `fk_order_parcel` (`Ord_PclID`),
+  KEY `fk_order_service` (`Ord_SvcID`),
+  CONSTRAINT `fk_order_parcel` FOREIGN KEY (`Ord_PclID`) REFERENCES `parcel` (`Pcl_ID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_order_service` FOREIGN KEY (`Ord_SvcID`) REFERENCES `service_type` (`Svc_ID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_order_shipper` FOREIGN KEY (`Ord_ShprID`) REFERENCES `shipper` (`Shpr_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `order` (`Ord_ID`, `Ord_ShprID`, `Ord_PclID`, `Ord_SvcID`, `Ord_Status`, `Ord_PickPref`, `Ord_PickAddr`, `Ord_PickDt`, `Ord_CrtdDt`) VALUES
+  ('ORD00001', 'SHP235D4', 'PCL00001', 'SVC00002', 'Delivered', 'Scheduled Pickup', '123Kabit / Kabitstreets, Cebu, Cebu 2321', '2026-05-12', '2026-05-12 17:28:02'),
+  ('ORD00002', 'SHP235D4', 'PCL00002', 'SVC00001', 'In Transit', 'Scheduled Pickup', 'gsdgsvcxvxczv', '2026-05-13', '2026-05-12 18:36:04'),
+  ('ORD00003', 'SHP235D4', 'PCL00003', 'SVC00001', 'Delivered', 'Dropoff', NULL, NULL, '2026-05-12 18:53:37'),
+  ('ORD00004', 'SHP235D4', 'PCL00004', 'SVC00001', 'Delivered', 'Scheduled Pickup', '123Kabit / Kabitstreets, Cebu, Cebu 2321', '2026-05-13', '2026-05-12 19:10:54');
+
+-- ------------------------------------------------------------
+-- Table: `parcel`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `parcel`;
+CREATE TABLE `parcel` (
+  `Pcl_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Pcl_ShprID` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Pcl_Wght` decimal(8,2) DEFAULT NULL,
+  `Pcl_DeclVal` decimal(10,2) DEFAULT '0.00',
+  `Pcl_IsCOD` varchar(5) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'No',
+  `Pcl_CODAmt` decimal(10,2) DEFAULT '0.00',
+  `Pcl_RcptID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Pcl_BookDt` datetime DEFAULT CURRENT_TIMESTAMP,
+  `Pcl_ProbFlg` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`Pcl_ID`),
+  KEY `fk_parcel_rcpt` (`Pcl_RcptID`),
+  CONSTRAINT `fk_parcel_rcpt` FOREIGN KEY (`Pcl_RcptID`) REFERENCES `recipient` (`Rcpt_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `parcel` (`Pcl_ID`, `Pcl_ShprID`, `Pcl_Wght`, `Pcl_DeclVal`, `Pcl_IsCOD`, `Pcl_CODAmt`, `Pcl_RcptID`, `Pcl_BookDt`, `Pcl_ProbFlg`) VALUES
+  ('PCL00001', 'SHP235D4', '12.00', '123.00', 'Yes', '123.00', 'RCPT00001', '2026-05-12 17:28:02', '0'),
+  ('PCL00002', 'SHP235D4', '19.90', '1234.00', 'Yes', '1234.00', 'RCPT00002', '2026-05-12 18:36:04', '0'),
+  ('PCL00003', 'SHP235D4', '20.00', '123.00', 'Yes', '1500.00', 'RCPT00003', '2026-05-12 18:53:37', '0'),
+  ('PCL00004', 'SHP235D4', '15.00', '132.00', 'Yes', '150.00', 'RCPT00004', '2026-05-12 19:10:54', '0');
+
+-- ------------------------------------------------------------
+-- Table: `recipient`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `recipient`;
+CREATE TABLE `recipient` (
+  `Rcpt_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Rcpt_Name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Rcpt_Phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Rcpt_Addr` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Rcpt_Area` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`Rcpt_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `recipient` (`Rcpt_ID`, `Rcpt_Name`, `Rcpt_Phone`, `Rcpt_Addr`, `Rcpt_Area`) VALUES
+  ('RCPT00001', 'Juan', '09123456789', '123 tereasadasda', 'Visayas'),
+  ('RCPT00002', 'Cydelgwapo', '091231231222', '627,tomaas,gwaapo,consolaacion,cebu', 'Visayas'),
+  ('RCPT00003', 'Juan Cydel', '09676767', '2 Tomas Street Tugbongan', 'Visayas'),
+  ('RCPT00004', 'Cydelgwapo2', '0912312312221', 'House of the city', 'Visayas');
+
+-- ------------------------------------------------------------
+-- Table: `rider`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `rider`;
+CREATE TABLE `rider` (
+  `Rdr_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Rdr_UsrID` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Rdr_Name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Rdr_Phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Rdr_VhcTyp` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Rdr_HubID` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Rdr_Status` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Active',
+  PRIMARY KEY (`Rdr_ID`),
+  KEY `fk_rider_user` (`Rdr_UsrID`),
+  KEY `fk_rider_hub` (`Rdr_HubID`),
+  CONSTRAINT `fk_rider_hub` FOREIGN KEY (`Rdr_HubID`) REFERENCES `hub` (`Hub_ID`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_rider_user` FOREIGN KEY (`Rdr_UsrID`) REFERENCES `user_account` (`Usr_ID`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `rider` (`Rdr_ID`, `Rdr_UsrID`, `Rdr_Name`, `Rdr_Phone`, `Rdr_VhcTyp`, `Rdr_HubID`, `Rdr_Status`) VALUES
+  ('RDR00001', 'USR00003', 'Ryo Yamada', '09173333333', 'Motorcycle', 'HUB00003', 'Active'),
+  ('RDR00002', 'USR00004', 'Carlo Mendoza', '09174444444', 'Motorcycle', 'HUB00001', 'Active');
+
+-- ------------------------------------------------------------
+-- Table: `rider_gps`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `rider_gps`;
+CREATE TABLE `rider_gps` (
+  `GPS_ID` int NOT NULL AUTO_INCREMENT,
+  `GPS_RdrID` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `GPS_Lat` decimal(10,7) NOT NULL,
+  `GPS_Lng` decimal(10,7) NOT NULL,
+  `GPS_UpdatedAt` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`GPS_ID`),
+  UNIQUE KEY `uk_rider` (`GPS_RdrID`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT INTO `rider_gps` (`GPS_ID`, `GPS_RdrID`, `GPS_Lat`, `GPS_Lng`, `GPS_UpdatedAt`) VALUES
+  ('1', 'RDR00001', '14.5547000', '121.0244000', '2026-05-13 01:09:15'),
+  ('2', 'RDR00002', '14.5795000', '120.9842000', '2026-05-13 01:09:15');
+
+-- ------------------------------------------------------------
+-- Table: `service_type`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `service_type`;
+CREATE TABLE `service_type` (
+  `Svc_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Svc_Name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Svc_MaxWght` decimal(8,2) NOT NULL DEFAULT '20.00' COMMENT 'Max weight in kg',
+  `Svc_BaseRte` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Base shipping rate',
+  `Svc_LeadTm` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Lead time e.g. Before 6PM',
+  PRIMARY KEY (`Svc_ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `service_type` (`Svc_ID`, `Svc_Name`, `Svc_MaxWght`, `Svc_BaseRte`, `Svc_LeadTm`) VALUES
+  ('SVC00001', 'Standard Delivery', '20.00', '85.00', '3-5 Days'),
+  ('SVC00002', 'Express Delivery', '20.00', '120.00', '1-2 Days'),
+  ('SVC00003', 'Same-Day Delivery', '5.00', '150.00', 'Same Day'),
+  ('SVC00004', 'Next-Day Delivery', '20.00', '100.00', 'Before 6PM'),
+  ('SVC00005', 'COD Standard', '20.00', '85.00', '3-5 Days');
+
+-- ------------------------------------------------------------
+-- Table: `shipment`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `shipment`;
+CREATE TABLE `shipment` (
+  `Shpm_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Shpm_OrdID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Shpm_HubID` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Shpm_Status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending Pickup',
+  `Shpm_AtmCnt` int NOT NULL DEFAULT '0',
+  `Shpm_PickDt` datetime DEFAULT NULL,
+  `Shpm_DlvDt` datetime DEFAULT NULL,
+  `Shpm_Dt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`Shpm_ID`),
+  KEY `fk_shipment_order` (`Shpm_OrdID`),
+  KEY `fk_shipment_hub` (`Shpm_HubID`),
+  CONSTRAINT `fk_shipment_hub` FOREIGN KEY (`Shpm_HubID`) REFERENCES `hub` (`Hub_ID`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_shipment_order` FOREIGN KEY (`Shpm_OrdID`) REFERENCES `order` (`Ord_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `shipment` (`Shpm_ID`, `Shpm_OrdID`, `Shpm_HubID`, `Shpm_Status`, `Shpm_AtmCnt`, `Shpm_PickDt`, `Shpm_DlvDt`, `Shpm_Dt`) VALUES
+  ('SHP00001', 'ORD00001', 'HUB00003', 'Delivered', '1', '2026-05-12 17:30:37', '2026-05-12 17:33:35', '2026-05-12 23:29:35'),
+  ('SHP00002', 'ORD00004', 'HUB00003', 'Delivered', '1', '2026-05-12 19:12:24', '2026-05-12 19:20:48', '2026-05-13 01:11:56'),
+  ('SHP00003', 'ORD00003', 'HUB00003', 'Delivered', '1', '2026-05-12 19:12:22', '2026-05-12 19:18:01', '2026-05-13 01:12:02');
+
+-- ------------------------------------------------------------
+-- Table: `shipper`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `shipper`;
+CREATE TABLE `shipper` (
+  `Shpr_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Shpr_UsrID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Shpr_BizName` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Shpr_PickAddr` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`Shpr_ID`),
+  KEY `fk_shipper_user` (`Shpr_UsrID`),
+  CONSTRAINT `fk_shipper_user` FOREIGN KEY (`Shpr_UsrID`) REFERENCES `user_account` (`Usr_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `shipper` (`Shpr_ID`, `Shpr_UsrID`, `Shpr_BizName`, `Shpr_PickAddr`) VALUES
+  ('SHP235D4', 'USR8CBA0', 'Cydel Judilla', '123Kabit / Kabitstreets, Cebu, Cebu 2321'),
+  ('SHPR0001', 'USR00001', 'JDC Supplies', 'Blk 1 Lot 2, Makati City'),
+  ('SHPR0002', 'USR00002', 'Maria Fashion Store', 'Unit 3, Taguig City');
+
+-- ------------------------------------------------------------
+-- Table: `shipping_fee`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `shipping_fee`;
+CREATE TABLE `shipping_fee` (
+  `Fee_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Fee_OrdID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Fee_Base` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Base rate',
+  `Fee_Insur` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Insurance fee',
+  `Fee_Rerte` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Rerouting fee',
+  `Fee_Store` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'Storage fee',
+  `Fee_CODHdl` decimal(10,2) NOT NULL DEFAULT '0.00' COMMENT 'COD handling fee',
+  `Fee_Total` decimal(10,2) NOT NULL DEFAULT '0.00',
+  PRIMARY KEY (`Fee_ID`),
+  UNIQUE KEY `Fee_OrdID` (`Fee_OrdID`),
+  CONSTRAINT `fk_fee_order` FOREIGN KEY (`Fee_OrdID`) REFERENCES `order` (`Ord_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `shipping_fee` (`Fee_ID`, `Fee_OrdID`, `Fee_Base`, `Fee_Insur`, `Fee_Rerte`, `Fee_Store`, `Fee_CODHdl`, `Fee_Total`) VALUES
+  ('FEE00001', 'ORD00001', '120.00', '0.00', '0.00', '0.00', '2.46', '122.46'),
+  ('FEE00002', 'ORD00002', '85.00', '0.00', '0.00', '0.00', '24.68', '109.68'),
+  ('FEE00003', 'ORD00003', '85.00', '0.00', '0.00', '0.00', '30.00', '115.00'),
+  ('FEE00004', 'ORD00004', '85.00', '0.00', '0.00', '0.00', '3.00', '88.00');
+
+-- ------------------------------------------------------------
+-- Table: `staff`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `staff`;
+CREATE TABLE `staff` (
+  `Stf_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Stf_UsrID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Stf_HubID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Stf_Role` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'Branch Staff',
+  PRIMARY KEY (`Stf_ID`),
+  KEY `fk_staff_user` (`Stf_UsrID`),
+  KEY `fk_staff_hub` (`Stf_HubID`),
+  CONSTRAINT `fk_staff_hub` FOREIGN KEY (`Stf_HubID`) REFERENCES `hub` (`Hub_ID`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_staff_user` FOREIGN KEY (`Stf_UsrID`) REFERENCES `user_account` (`Usr_ID`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `staff` (`Stf_ID`, `Stf_UsrID`, `Stf_HubID`, `Stf_Role`) VALUES
+  ('STF00001', 'USR00005', 'HUB00003', 'Branch Manager');
+
+-- ------------------------------------------------------------
+-- Table: `user_account`
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `user_account`;
+CREATE TABLE `user_account` (
+  `Usr_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Usr_Name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Usr_Email` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Usr_Pass` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Usr_Phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Usr_Type` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'shipper',
+  `Usr_Status` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Active',
+  `Usr_DateReg` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`Usr_ID`),
+  UNIQUE KEY `Usr_Email` (`Usr_Email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO `user_account` (`Usr_ID`, `Usr_Name`, `Usr_Email`, `Usr_Pass`, `Usr_Phone`, `Usr_Type`, `Usr_Status`, `Usr_DateReg`) VALUES
+  ('USR00001', 'Juan Dela Cruz', 'juan@email.com', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09171111111', 'shipper', 'Active', '2026-05-12 23:07:40'),
+  ('USR00002', 'Maria Santos', 'maria@email.com', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09172222222', 'shipper', 'Active', '2026-05-12 23:07:40'),
+  ('USR00003', 'Ryo Yamada', 'ryo@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09173333333', 'rider', 'Active', '2026-05-12 23:07:40'),
+  ('USR00004', 'Carlo Mendoza', 'carlo@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09174444444', 'rider', 'Active', '2026-05-12 23:07:40'),
+  ('USR00005', 'Sarah Staff', 'staff@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09175555555', 'staff', 'Active', '2026-05-12 23:07:40'),
+  ('USR8CBA0', 'Cydel Judilla', 'test1@gmail.com', '$2y$10$38SoisJiKLgRMB39qrk8uupgso5Bni.ld.VR3Dss.4VwgMqyVVDH6', '+63 931231232', 'shipper', 'Active', '2026-05-12 23:26:55');
+
+SET FOREIGN_KEY_CHECKS=1;
+-- ============================================================
+-- End of backup
+-- ============================================================

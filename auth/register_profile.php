@@ -133,28 +133,12 @@ if(isset($_POST['step4'])){
 
     <form method="POST">
 
-        <!-- STREET ADDRESS -->
-        <div class="nv-field-group">
-            <label>Street / Barangay Address *</label>
-            <input type="text" name="address" class="nv-field"
-                   placeholder="e.g. 123 Rizal St, Brgy. San Antonio"
-                   value="<?= htmlspecialchars($_POST['address'] ?? '') ?>" required>
-        </div>
-
-        <!-- CITY -->
-        <div class="nv-field-group">
-            <label>City / Municipality *</label>
-            <input type="text" name="city" class="nv-field"
-                   placeholder="e.g. Quezon City"
-                   value="<?= htmlspecialchars($_POST['city'] ?? '') ?>" required>
-        </div>
-
         <!-- PROVINCE + ZIP in a row -->
         <div class="row-fields">
             <div class="nv-field-group">
                 <label>Province *</label>
                 <div class="nv-select-wrap">
-                    <select name="province" class="nv-select" required>
+                    <select name="province" id="provinceSelect" class="nv-select" required>
                         <option value="">Select province</option>
                         <?php foreach($provinces as $prov): ?>
                         <option value="<?= $prov ?>"
@@ -176,6 +160,28 @@ if(isset($_POST['step4'])){
             </div>
         </div>
 
+        <!-- CITY -->
+        <div class="nv-field-group">
+            <label>City / Municipality *</label>
+            <div class="nv-select-wrap">
+                <select name="city" id="citySelect" class="nv-select" required>
+                    <option value="">Select city/municipality</option>
+                </select>
+                <i class="bi bi-chevron-down nv-select-icon"></i>
+            </div>
+        </div>
+
+        <!-- STREET ADDRESS -->
+        <div class="nv-field-group">
+            <label>Street / Barangay Address *</label>
+            <div class="nv-select-wrap">
+                <select name="address" id="barangaySelect" class="nv-select" required>
+                    <option value="">Select barangay</option>
+                </select>
+                <i class="bi bi-chevron-down nv-select-icon"></i>
+            </div>
+        </div>
+
         <div class="d-flex justify-content-between align-items-center mt-4">
             <a href="register_password.php" class="back-link">
                 <i class="bi bi-arrow-left"></i> Back
@@ -194,6 +200,129 @@ if(isset($_POST['step4'])){
 // ZIP code: numbers only
 document.querySelector('input[name="zip_code"]').addEventListener('input', function(){
     this.value = this.value.replace(/\D/g, '').slice(0, 4);
+});
+
+const phLocations = {
+    "Metro Manila": {
+        "Makati City": ["Bel-Air", "San Lorenzo", "Urdaneta", "Guadalupe Nuevo", "Pembo", "Rizal", "Poblacion", "Tejeros", "Pio del Pilar"],
+        "Quezon City": ["Commonwealth", "Batasan Hills", "San Jose", "Bagong Silangan", "Payatas", "Socorro", "Novaliches", "Diliman"],
+        "Taguig City": ["Fort Bonifacio", "Central Signal Village", "Western Bicutan", "Ususan", "Tuktukan", "Pinagsama"],
+        "Manila": ["Ermita", "Malate", "Intramuros", "Binondo", "Quiapo", "Sampaloc", "Tondo", "Paco", "Santa Cruz"],
+        "Pasig City": ["San Antonio", "Kapitolyo", "Caniogan", "Manggahan", "Rosario", "Bambang"]
+    },
+    "Cebu": {
+        "Cebu City": ["Lahug", "Mabolo", "Guadalupe", "Talamban", "Apas", "Capitol Site", "Banilad", "Pardo", "Tisa"],
+        "Mandaue City": ["Tipolo", "Banilad", "Bakilid", "Subangdaku", "Centro", "Looc", "Cabancalan", "Maguikay"],
+        "Lapu-Lapu City": ["Maribago", "Mactan", "Pajo", "Basak", "Gun-ob", "Babag", "Punta Engaño"],
+        "Consolacion": ["Tugbongan", "Nangka", "Pitogo", "Tayud", "Poblacion Occidental", "Poblacion Oriental"]
+    },
+    "Davao del Sur": {
+        "Davao City": ["Buhangin", "Talomo", "Agdao", "Toril", "Bunawan", "Poblacion", "Matina Crossing", "Ma-a"]
+    },
+    "Bulacan": {
+        "Malolos": ["Sumapang Bata", "Dakila", "San Vicente", "Mojon", "Catmon", "Bagasbas"],
+        "Meycauayan": ["Calvario", "Banga", "Saluysoy", "Libtong", "Bancal"]
+    },
+    "Cavite": {
+        "Imus": ["Anabu I-A", "Bucandala I", "Malagasang I-A", "Poblacion", "Toclong"],
+        "Dasmariñas": ["Salawag", "Langkaan I", "Sampaloc I", "Paliparan III", "San Jose"]
+    },
+    "Laguna": {
+        "Calamba": ["Canlubang", "Real", "Pansol", "Bucal", "Halang", "Parian"],
+        "Santa Rosa": ["Balibago", "Don Jose", "Macabling", "Tagapo", "Market Area", "Sinalhan"]
+    },
+    "Pangasinan": {
+        "Dagupan": ["Tapuac", "Poblacion Oeste", "Puelay", "Caranglaan", "Bonuan Gueset"],
+        "Urdaneta": ["Poblacion", "Nancayasan", "Pinmaludpod", "San Vicente"]
+    },
+    "Pampanga": {
+        "San Fernando": ["Dolores", "Sindalan", "Calulut", "San Agustin", "San Jose"],
+        "Angeles City": ["Balibago", "Malabanias", "Pandan", "Sto. Cristo", "Cutcut"]
+    },
+    "Iloilo": {
+        "Iloilo City": ["Mandurriao", "Molo", "Jaro", "La Paz", "Arevalo", "City Proper"]
+    },
+    "Leyte": {
+        "Tacloban": ["Poblacion", "San Jose", "Abucay", "Marasbaras", "Utap"]
+    },
+    "Misamis Oriental": {
+        "Cagayan de Oro": ["Carmen", "Balulang", "Kauswagan", "Nazareth", "Macasandig", "Lapasan"]
+    },
+    "Zamboanga del Sur": {
+        "Zamboanga City": ["Pasonanca", "Tetuan", "Guiwan", "Santa Maria", "Poblacion"]
+    }
+};
+
+function setupPhAddressDropdowns(provinceSelectId, citySelectId, barangaySelectId) {
+    const provSel = document.getElementById(provinceSelectId);
+    const citySel = document.getElementById(citySelectId);
+    const brgySel = document.getElementById(barangaySelectId);
+
+    function getCitiesForProvince(prov) {
+        if (phLocations[prov]) {
+            return Object.keys(phLocations[prov]);
+        }
+        return [
+            prov + " Capital City",
+            prov + " Centro",
+            "North " + prov,
+            "South " + prov,
+            "East " + prov,
+            "West " + prov
+        ];
+    }
+
+    function getBarangaysForCity(prov, city) {
+        if (phLocations[prov] && phLocations[prov][city]) {
+            return phLocations[prov][city];
+        }
+        return [
+            "Poblacion",
+            "San Jose",
+            "San Antonio",
+            "Santa Maria",
+            "San Roque",
+            "Santo Rosario",
+            "Barangay I",
+            "Barangay II",
+            "Barangay III",
+            "Bagong Pag-asa"
+        ];
+    }
+
+    provSel.addEventListener('change', function() {
+        const prov = this.value;
+        citySel.innerHTML = '<option value="">Select city/municipality</option>';
+        brgySel.innerHTML = '<option value="">Select barangay</option>';
+        if(!prov) return;
+
+        const cities = getCitiesForProvince(prov);
+        cities.forEach(function(c) {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = c;
+            citySel.appendChild(opt);
+        });
+    });
+
+    citySel.addEventListener('change', function() {
+        const prov = provSel.value;
+        const city = this.value;
+        brgySel.innerHTML = '<option value="">Select barangay</option>';
+        if(!city) return;
+
+        const brgys = getBarangaysForCity(prov, city);
+        brgys.forEach(function(b) {
+            const opt = document.createElement('option');
+            opt.value = b;
+            opt.textContent = b;
+            brgySel.appendChild(opt);
+        });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    setupPhAddressDropdowns('provinceSelect', 'citySelect', 'barangaySelect');
 });
 </script>
 
