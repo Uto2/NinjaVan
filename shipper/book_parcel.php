@@ -13,46 +13,43 @@ $error      = "";
 $success    = "";
 
 // Fetch Shipper Info for default pickup address
-$shipperRes = $conn->query("SELECT * FROM SHIPPER WHERE Shpr_ID = '$shipperId'");
-$shipper = $shipperRes->fetch_assoc();
+$shipperId = $_SESSION['shipper_id'];
+$shipperSnapshot = $db->getReference('users/' . $_SESSION['account_id'])->getSnapshot();
+$shipper = $shipperSnapshot->getValue() ?? [];
 $defaultAddress = $shipper['Shpr_PickAddr'] ?? '';
 
-// Ensure SERVICE_TYPE has data
-$svcCheck = $conn->query("SELECT COUNT(*) c FROM SERVICE_TYPE")->fetch_assoc()['c'];
-if($svcCheck == 0){
-    $conn->query("INSERT INTO SERVICE_TYPE (Svc_ID, Svc_Name, Svc_MaxWght, Svc_BaseRte, Svc_LeadTm) VALUES 
-        ('SVC00001', 'Standard Delivery', 20, 85,  '3-5 Days'),
-        ('SVC00002', 'Express Delivery',  20, 120, '1-2 Days'),
-        ('SVC00003', 'Same-Day Delivery',  5, 150, 'Same Day'),
-        ('SVC00004', 'Next-Day Delivery', 20, 100, 'Before 6PM'),
-        ('SVC00005', 'COD Standard',      20, 85,  '3-5 Days')
-    ");
+// Ensure SERVICE_TYPE has data in Firebase
+$servicesRef = $db->getReference('services');
+$servicesSnapshot = $servicesRef->getSnapshot();
+if (!$servicesSnapshot->hasChildren()) {
+    $servicesRef->set([
+        'SVC00001' => ['Svc_ID' => 'SVC00001', 'Svc_Name' => 'Standard Delivery', 'Svc_MaxWght' => 20, 'Svc_BaseRte' => 85, 'Svc_LeadTm' => '3-5 Days'],
+        'SVC00002' => ['Svc_ID' => 'SVC00002', 'Svc_Name' => 'Express Delivery', 'Svc_MaxWght' => 20, 'Svc_BaseRte' => 120, 'Svc_LeadTm' => '1-2 Days'],
+        'SVC00003' => ['Svc_ID' => 'SVC00003', 'Svc_Name' => 'Same-Day Delivery', 'Svc_MaxWght' => 5, 'Svc_BaseRte' => 150, 'Svc_LeadTm' => 'Same Day'],
+        'SVC00004' => ['Svc_ID' => 'SVC00004', 'Svc_Name' => 'Next-Day Delivery', 'Svc_MaxWght' => 20, 'Svc_BaseRte' => 100, 'Svc_LeadTm' => 'Before 6PM'],
+        'SVC00005' => ['Svc_ID' => 'SVC00005', 'Svc_Name' => 'COD Standard', 'Svc_MaxWght' => 20, 'Svc_BaseRte' => 85, 'Svc_LeadTm' => '3-5 Days']
+    ]);
+    $servicesSnapshot = $servicesRef->getSnapshot();
 }
-$services = $conn->query("SELECT * FROM SERVICE_TYPE");
+$services = $servicesSnapshot->getValue() ?? [];
 
 // Helper function to generate IDs
-function generateId($conn, $prefix, $table, $column) {
-    $res = $conn->query("SELECT $column FROM $table ORDER BY $column DESC LIMIT 1");
-    if($res && $res->num_rows > 0) {
-        $lastId = $res->fetch_assoc()[$column];
-        $num = (int)substr($lastId, strlen($prefix));
-        return $prefix . str_pad($num + 1, 5, '0', STR_PAD_LEFT);
-    }
-    return $prefix . '00001';
+function generateId($prefix) {
+    return $prefix . strtoupper(substr(uniqid(), -6));
 }
 
 if($_SERVER['REQUEST_METHOD'] === 'POST') {
     // 1. Recipient Info
-    $rcptFName = $conn->real_escape_string(trim($_POST['rcpt_first_name']));
-    $rcptLName = $conn->real_escape_string(trim($_POST['rcpt_last_name']));
+    $rcptFName = trim($_POST['rcpt_first_name']);
+    $rcptLName = trim($_POST['rcpt_last_name']);
     $rcptName  = $rcptFName . ' ' . $rcptLName;
-    $rcptPhone = $conn->real_escape_string(trim($_POST['rcpt_phone']));
+    $rcptPhone = trim($_POST['rcpt_phone']);
     
-    $rcptProv  = $conn->real_escape_string(trim($_POST['rcpt_province']));
-    $rcptCity  = $conn->real_escape_string(trim($_POST['rcpt_city']));
-    $rcptBrgy  = $conn->real_escape_string(trim($_POST['rcpt_barangay']));
-    $rcptZip   = $conn->real_escape_string(trim($_POST['rcpt_zip'] ?? ''));
-    $rcptStreet = $conn->real_escape_string(trim($_POST['rcpt_street']));
+    $rcptProv  = trim($_POST['rcpt_province']);
+    $rcptCity  = trim($_POST['rcpt_city']);
+    $rcptBrgy  = trim($_POST['rcpt_barangay']);
+    $rcptZip   = trim($_POST['rcpt_zip'] ?? '');
+    $rcptStreet = trim($_POST['rcpt_street']);
     
     $rcptAddr  = $rcptStreet . ', ' . $rcptBrgy . ', ' . $rcptCity . ', ' . $rcptProv . ' ' . $rcptZip;
 
@@ -78,10 +75,10 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
     $codAmt    = $isCOD === 'Yes' ? (float)$_POST['cod_amt'] : 0;
     
     // 3. Service & Pickup
-    $svcId     = $conn->real_escape_string($_POST['service_id']);
-    $pickPref  = $conn->real_escape_string($_POST['pick_pref']);
-    $pickDt    = $pickPref === 'Scheduled Pickup' ? $conn->real_escape_string($_POST['pick_dt']) : NULL;
-    $pickAddr  = $pickPref === 'Scheduled Pickup' ? $conn->real_escape_string(trim($_POST['pick_addr'])) : NULL;
+    $svcId     = trim($_POST['service_id']);
+    $pickPref  = trim($_POST['pick_pref']);
+    $pickDt    = $pickPref === 'Scheduled Pickup' ? trim($_POST['pick_dt']) : NULL;
+    $pickAddr  = $pickPref === 'Scheduled Pickup' ? trim($_POST['pick_addr']) : NULL;
 
     // Check prohibited items
     if(!isset($_POST['terms_agreed'])) {
@@ -90,38 +87,15 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if(!$error) {
         // Validation: Weight Limits
-        $svcData = $conn->query("SELECT * FROM SERVICE_TYPE WHERE Svc_ID='$svcId'")->fetch_assoc();
-        if($weight > $svcData['Svc_MaxWght']) {
+        $svcData = $services[$svcId] ?? null;
+        if($svcData && $weight > $svcData['Svc_MaxWght']) {
             $error = "Weight exceeds maximum limit for " . $svcData['Svc_Name'] . " delivery (Max: " . $svcData['Svc_MaxWght'] . "kg).";
         }
     }
 
     if(!$error) {
-        $conn->begin_transaction();
         try {
-            // RECIPIENT
-            $rcptId = generateId($conn, 'RCPT', 'RECIPIENT', 'Rcpt_ID');
-            $conn->query("INSERT INTO RECIPIENT (Rcpt_ID, Rcpt_Name, Rcpt_Phone, Rcpt_Addr, Rcpt_Area) 
-                          VALUES ('$rcptId', '$rcptName', '$rcptPhone', '$rcptAddr', '$rcptArea')");
-
-            // PARCEL
-            $pclId = generateId($conn, 'PCL', 'PARCEL', 'Pcl_ID');
-            $dateNow = date('Y-m-d H:i:s');
-            $conn->query("INSERT INTO PARCEL (Pcl_ID, Pcl_ShprID, Pcl_RcptID, Pcl_Wght, Pcl_DeclVal, Pcl_IsCOD, Pcl_CODAmt, Pcl_BookDt, Pcl_ProbFlg) 
-                          VALUES ('$pclId', '$shipperId', '$rcptId', $weight, $declVal, '$isCOD', $codAmt, '$dateNow', 0)");
-
-            // ORDER
-            $ordId = generateId($conn, 'ORD', '`ORDER`', 'Ord_ID');
-            $pickDtSql = $pickDt ? "'$pickDt'" : "NULL";
-            $pickAddrSql = $pickAddr ? "'$pickAddr'" : "NULL";
-            $conn->query("INSERT INTO `ORDER` (Ord_ID, Ord_PclID, Ord_SvcID, Ord_ShprID, Ord_Status, Ord_PickPref, Ord_PickDt, Ord_PickAddr, Ord_CrtdDt) 
-                          VALUES ('$ordId', '$pclId', '$svcId', '$shipperId', 'Order Created', '$pickPref', $pickDtSql, $pickAddrSql, '$dateNow')");
-
-            // AIRWAY_BILL
-            $awbId = generateId($conn, 'AWB', 'AIRWAY_BILL', 'AWB_ID');
-            $trkNum = 'NVPH' . strtoupper(bin2hex(random_bytes(4))); // Generate tracking number
-            $conn->query("INSERT INTO AIRWAY_BILL (AWB_ID, AWB_OrdID, AWB_TrkNum, AWB_PrtDt, AWB_PrtFmt, AWB_BrCode) 
-                          VALUES ('$awbId', '$ordId', '$trkNum', '$dateNow', 'Thermal', '$trkNum')");
+            $dateNow = date('c'); // ISO 8601 string
 
             // SHIPPING_FEE Calculation
             $feeBase = (float)$svcData['Svc_BaseRte'];
@@ -138,16 +112,66 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
             $feeCodHdl = $isCOD === 'Yes' ? ($codAmt * 0.02) : 0; // 2% handling fee
             $feeTotal = $feeBase + $feeInsur + $feeCodHdl;
 
-            $feeId = generateId($conn, 'FEE', 'SHIPPING_FEE', 'Fee_ID');
-            $conn->query("INSERT INTO SHIPPING_FEE (Fee_ID, Fee_OrdID, Fee_Base, Fee_Insur, Fee_Rerte, Fee_Store, Fee_CODHdl, Fee_Total) 
-                          VALUES ('$feeId', '$ordId', $feeBase, $feeInsur, 0, 0, $feeCodHdl, $feeTotal)");
+            $ordId  = generateId('ORD-');
+            $rcptId = generateId('RCPT-');
+            $pclId  = generateId('PCL-');
+            $awbId  = generateId('AWB-');
+            $feeId  = generateId('FEE-');
+            $trkNum = 'NVPH' . strtoupper(bin2hex(random_bytes(4)));
 
-            $conn->commit();
+            $orderData = [
+                'Ord_ID' => $ordId,
+                'Ord_PclID' => $pclId,
+                'Ord_SvcID' => $svcId,
+                'Ord_ShprID' => $shipperId,
+                'Ord_Status' => 'Order Created',
+                'Ord_PickPref' => $pickPref,
+                'Ord_PickDt' => $pickDt,
+                'Ord_PickAddr' => $pickAddr,
+                'Ord_CrtdDt' => $dateNow,
+                
+                'recipient' => [
+                    'Rcpt_ID' => $rcptId,
+                    'Rcpt_Name' => $rcptName,
+                    'Rcpt_Phone' => $rcptPhone,
+                    'Rcpt_Addr' => $rcptAddr,
+                    'Rcpt_Area' => $rcptArea
+                ],
+                'parcel' => [
+                    'Pcl_ID' => $pclId,
+                    'Pcl_Wght' => $weight,
+                    'Pcl_DeclVal' => $declVal,
+                    'Pcl_IsCOD' => $isCOD,
+                    'Pcl_CODAmt' => $codAmt,
+                    'Pcl_BookDt' => $dateNow,
+                    'Pcl_ProbFlg' => 0
+                ],
+                'service' => $svcData,
+                'awb' => [
+                    'AWB_ID' => $awbId,
+                    'AWB_TrkNum' => $trkNum,
+                    'AWB_PrtDt' => $dateNow,
+                    'AWB_PrtFmt' => 'Thermal',
+                    'AWB_BrCode' => $trkNum
+                ],
+                'fee' => [
+                    'Fee_ID' => $feeId,
+                    'Fee_Base' => $feeBase,
+                    'Fee_Insur' => $feeInsur,
+                    'Fee_Rerte' => 0,
+                    'Fee_Store' => 0,
+                    'Fee_CODHdl' => $feeCodHdl,
+                    'Fee_Total' => $feeTotal
+                ]
+            ];
+
+            // Push order to RTDB
+            $db->getReference('orders/' . $ordId)->set($orderData);
+
             $_SESSION['toast_success'] = "Parcel booked successfully! Tracking No: " . $trkNum;
             header("Location: /ninjavan/shipper/my_orders.php"); exit();
 
         } catch (Exception $e) {
-            $conn->rollback();
             $error = "Booking failed: " . $e->getMessage();
         }
     }
@@ -289,13 +313,13 @@ include "../layout/dashboard_layout.php";
                 <label>Select Service</label>
                 <select name="service_id" id="serviceType" class="nv-input" required>
                     <option value="">Choose a service...</option>
-                    <?php while($s = $services->fetch_assoc()): ?>
+                    <?php foreach($services as $sId => $s): ?>
                     <option value="<?= $s['Svc_ID'] ?>" 
                             data-base="<?= $s['Svc_BaseRte'] ?>" 
                             data-max="<?= $s['Svc_MaxWght'] ?>">
-                        <?= $s['Svc_Name'] ?> — Base: ₱<?= $s['Svc_BaseRte'] ?> (Max <?= $s['Svc_MaxWght'] ?>kg)
+                        <?= htmlspecialchars($s['Svc_Name']) ?> — Base: ₱<?= $s['Svc_BaseRte'] ?> (Max <?= $s['Svc_MaxWght'] ?>kg)
                     </option>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 </select>
             </div>
         </div>

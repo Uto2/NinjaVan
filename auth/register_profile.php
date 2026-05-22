@@ -47,46 +47,56 @@ if(isset($_POST['step4'])){
         $fullAddress = $address . ', ' . $barangay . ', ' . $city . ', ' . $province
                      . ($zip ? ' ' . $zip : '');
 
-        // Generate IDs — cryptographically secure
-        $usrId  = 'USR' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+        // Generate shipper ID
         $shprId = 'SHP' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
-
-        $hashed = password_hash($_SESSION['reg_password'], PASSWORD_DEFAULT);
-
-        // Insert account
         $name = $_SESSION['reg_fname'] . ' ' . $_SESSION['reg_lname'];
-        $stmt1 = $conn->prepare("
-            INSERT INTO USER_ACCOUNT
-                (Usr_ID, Usr_Email, Usr_Pass, Usr_Name, Usr_Phone, Usr_Type, Usr_Status, Usr_DateReg)
-            VALUES (?, ?, ?, ?, ?, 'shipper', 'Active', NOW())
-        ");
-        $stmt1->bind_param("sssss", $usrId, $_SESSION['reg_email'], $hashed, $name, $_SESSION['reg_phone']);
-        $stmt1->execute();
 
-        // Insert shipper
-        $stmt2 = $conn->prepare("
-            INSERT INTO SHIPPER
-                (Shpr_ID, Shpr_UsrID, Shpr_BizName, Shpr_PickAddr)
-            VALUES (?, ?, ?, ?)
-        ");
-        $stmt2->bind_param(
-            "ssss",
-            $shprId, $usrId,
-            $name,
-            $fullAddress
-        );
-        $stmt2->execute();
+        try {
+            // Create user in Firebase Auth
+            $authProps = [
+                'email' => $_SESSION['reg_email'],
+                'emailVerified' => true,
+                'password' => $_SESSION['reg_password'],
+                'displayName' => $name,
+            ];
+            
+            // Append +63 to phone if valid format (assuming 10 digits 9xxxxxxxxx)
+            if (strlen($_SESSION['reg_phone']) == 10) {
+                $authProps['phoneNumber'] = '+63' . $_SESSION['reg_phone'];
+            }
 
-        // Clear registration session
-        unset(
-            $_SESSION['reg_step'],   $_SESSION['reg_fname'],
-            $_SESSION['reg_lname'],  $_SESSION['reg_email'],
-            $_SESSION['reg_phone'],  $_SESSION['reg_otp'],
-            $_SESSION['reg_otp_time'], $_SESSION['reg_password']
-        );
+            $createdUser = $auth->createUser($authProps);
+            $usrId = $createdUser->uid;
 
-        $_SESSION['success_msg'] = "Account created successfully! Welcome to NinjaVan.";
-        header("Location: login.php"); exit();
+            // Insert into Realtime Database users node
+            $db->getReference('users/' . $usrId)->set([
+                'Usr_ID' => $usrId,
+                'Usr_Name' => $name,
+                'Usr_Email' => $_SESSION['reg_email'],
+                'Usr_Phone' => $_SESSION['reg_phone'],
+                'Usr_Type' => 'shipper',
+                'Usr_Status' => 'Active',
+                'Usr_DateReg' => date('c'),
+                'Shpr_ID' => $shprId,
+                'Shpr_BizName' => $name,
+                'Shpr_PickAddr' => $fullAddress
+            ]);
+
+            // Clear registration session
+            unset(
+                $_SESSION['reg_step'],   $_SESSION['reg_fname'],
+                $_SESSION['reg_lname'],  $_SESSION['reg_email'],
+                $_SESSION['reg_phone'],  $_SESSION['reg_otp'],
+                $_SESSION['reg_otp_time'], $_SESSION['reg_password']
+            );
+        } catch (\Exception $e) {
+            $error = "Error creating account: " . $e->getMessage();
+        }
+
+        if (!$error) {
+            $_SESSION['success_msg'] = "Account created successfully! Welcome to NinjaVan.";
+            header("Location: login.php"); exit();
+        }
     }
 }
 ?>

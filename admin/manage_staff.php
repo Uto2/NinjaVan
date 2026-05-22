@@ -19,40 +19,39 @@ if(isset($_POST['add_staff'])){
     $phone     = trim($_POST['phone']);
     $hubId     = trim($_POST['hub_id']);
     $role      = trim($_POST['staff_role']);
-    $pass      = password_hash($_POST['password'], PASSWORD_BCRYPT);
+    $pass      = $_POST['password'];
 
-    // Check email uniqueness — prepared statement
-    $chk = $conn->prepare("SELECT Usr_ID FROM USER_ACCOUNT WHERE Usr_Email = ?");
-    $chk->bind_param('s', $email);
-    $chk->execute();
-    $chk->store_result();
-    if($chk->num_rows > 0){
-        $chk->close();
+    try {
+        // 1. Create User in Firebase Auth
+        $authProps = [
+            'email' => $email,
+            'password' => $pass,
+            'displayName' => $name,
+        ];
+        $createdUser = $auth->createUser($authProps);
+        $usrId = $createdUser->uid;
+        
+        // 2. Add to RTDB users node
+        $stfId = 'STF-' . strtoupper(substr(uniqid(), -6));
+        $db->getReference('users/' . $usrId)->set([
+            'Usr_ID' => $usrId,
+            'Usr_Name' => $name,
+            'Usr_Email' => $email,
+            'Usr_Phone' => $phone,
+            'Usr_Type' => 'staff',
+            'Usr_Status' => 'Active',
+            'Stf_ID' => $stfId,
+            'hub_id' => $hubId,
+            'Stf_Role' => $role
+        ]);
+        
+        $_SESSION['toast_success'] = "Staff member \"$name\" added successfully!";
+    } catch (\Kreait\Firebase\Exception\Auth\EmailExists $e) {
         $_SESSION['toast_error'] = "Email already exists.";
-        header("Location: manage_staff.php"); exit();
+    } catch (Exception $e) {
+        $_SESSION['toast_error'] = "Failed to add staff: " . $e->getMessage();
     }
-    $chk->close();
-
-    // Create user account — prepared statement
-    $usrId = 'USR-' . strtoupper(substr(uniqid(), -6));
-    $stmtUsr = $conn->prepare(
-        "INSERT INTO USER_ACCOUNT (Usr_ID, Usr_Name, Usr_Email, Usr_Pass, Usr_Phone, Usr_Type, Usr_Status)
-         VALUES (?, ?, ?, ?, ?, 'staff', 'Active')"
-    );
-    $stmtUsr->bind_param('sssss', $usrId, $name, $email, $pass, $phone);
-    $stmtUsr->execute();
-    $stmtUsr->close();
-
-    // Create STAFF record — prepared statement
-    $stfId = 'STF-' . strtoupper(substr(uniqid(), -6));
-    $stmtStf = $conn->prepare(
-        "INSERT INTO STAFF (Stf_ID, Stf_UsrID, Stf_HubID, Stf_Role) VALUES (?, ?, ?, ?)"
-    );
-    $stmtStf->bind_param('ssss', $stfId, $usrId, $hubId, $role);
-    $stmtStf->execute();
-    $stmtStf->close();
-
-    $_SESSION['toast_success'] = "Staff member \"$name\" added successfully!";
+    
     header("Location: manage_staff.php"); exit();
 }
 
@@ -65,59 +64,86 @@ if(isset($_POST['toggle_status'])){
     if(!in_array($newSt, ['Active','Inactive'])) {
         header("Location: manage_staff.php"); exit();
     }
-    $stmt = $conn->prepare("UPDATE USER_ACCOUNT SET Usr_Status = ? WHERE Usr_ID = ?");
-    $stmt->bind_param('ss', $newSt, $usrId);
-    $stmt->execute();
-    $stmt->close();
-    $_SESSION['toast_success'] = "Staff status updated.";
+    try {
+        $db->getReference('users/' . $usrId)->update(['Usr_Status' => $newSt]);
+        // Also disable/enable in Auth
+        if ($newSt === 'Inactive') {
+            $auth->disableUser($usrId);
+        } else {
+            $auth->enableUser($usrId);
+        }
+        $_SESSION['toast_success'] = "Staff status updated.";
+    } catch (Exception $e) {
+        $_SESSION['toast_error'] = "Failed to update status.";
+    }
     header("Location: manage_staff.php"); exit();
 }
 
 // ---- HANDLE DELETE ----
 if(isset($_POST['delete_staff'])){
     csrf_verify();
-    $stfId = $_POST['stf_id'];
     $usrId = $_POST['usr_id'];
 
-    $s1 = $conn->prepare("DELETE FROM STAFF WHERE Stf_ID = ?");
-    $s1->bind_param('s', $stfId);
-    $s1->execute();
-    $s1->close();
-
-    $s2 = $conn->prepare("DELETE FROM USER_ACCOUNT WHERE Usr_ID = ?");
-    $s2->bind_param('s', $usrId);
-    $s2->execute();
-    $s2->close();
-
-    $_SESSION['toast_success'] = "Staff member removed.";
+    try {
+        $db->getReference('users/' . $usrId)->remove();
+        $auth->deleteUser($usrId);
+        $_SESSION['toast_success'] = "Staff member removed.";
+    } catch (Exception $e) {
+        $_SESSION['toast_error'] = "Failed to remove staff.";
+    }
     header("Location: manage_staff.php"); exit();
 }
 
 // ---- FETCH DATA ----
-$search       = $conn->real_escape_string($_GET['q'] ?? '');
-$filterStatus = $conn->real_escape_string($_GET['status'] ?? '');
+$search       = trim(strtolower($_GET['q'] ?? ''));
+$filterStatus = trim($_GET['status'] ?? '');
 
-$where = "WHERE u.Usr_Type='staff'";
-if($search)       $where .= " AND (u.Usr_Name LIKE '%$search%' OR u.Usr_Email LIKE '%$search%' OR s.Stf_Role LIKE '%$search%')";
-if($filterStatus) $where .= " AND u.Usr_Status='$filterStatus'";
+$hubsMap = [];
+$hubsSnap = $db->getReference('hubs')->getSnapshot();
+if ($hubsSnap->hasChildren()) {
+    foreach ($hubsSnap->getValue() as $k => $h) {
+        $hubsMap[$k] = $h;
+    }
+}
 
-$staff = $conn->query("
-    SELECT s.Stf_ID, s.Stf_Role,
-           u.Usr_ID, u.Usr_Name, u.Usr_Email, u.Usr_Phone, u.Usr_Status,
-           h.Hub_Name, h.Hub_Area
-    FROM STAFF s
-    JOIN USER_ACCOUNT u ON s.Stf_UsrID = u.Usr_ID
-    LEFT JOIN HUB h ON s.Stf_HubID = h.Hub_ID
-    $where
-    ORDER BY u.Usr_Status ASC, u.Usr_Name ASC
-");
+$staffList = [];
+$totalStf = 0;
+$activeStf = 0;
+$inactiveStf = 0;
 
-$totalStf    = $conn->query("SELECT COUNT(*) c FROM STAFF")->fetch_assoc()['c'];
-$activeStf   = $conn->query("SELECT COUNT(*) c FROM STAFF s JOIN USER_ACCOUNT u ON s.Stf_UsrID=u.Usr_ID WHERE u.Usr_Status='Active'")->fetch_assoc()['c'];
-$inactiveStf = $totalStf - $activeStf;
+$usersSnap = $db->getReference('users')->getSnapshot();
+if ($usersSnap->hasChildren()) {
+    foreach ($usersSnap->getValue() as $u) {
+        if (($u['Usr_Type'] ?? '') === 'staff') {
+            $totalStf++;
+            $status = $u['Usr_Status'] ?? 'Active';
+            if ($status === 'Active') $activeStf++;
+            else $inactiveStf++;
 
-// Hubs for add form
-$hubs = $conn->query("SELECT * FROM HUB ORDER BY Hub_Name");
+            if ($filterStatus && $status !== $filterStatus) continue;
+            if ($search) {
+                $match = str_contains(strtolower($u['Usr_Name'] ?? ''), $search) ||
+                         str_contains(strtolower($u['Usr_Email'] ?? ''), $search) ||
+                         str_contains(strtolower($u['Stf_Role'] ?? ''), $search);
+                if (!$match) continue;
+            }
+
+            // Bind hub info
+            $hubId = $u['hub_id'] ?? '';
+            $u['Hub_Name'] = $hubsMap[$hubId]['Hub_Name'] ?? '';
+            $u['Hub_Area'] = $hubsMap[$hubId]['Hub_Area'] ?? '';
+
+            $staffList[] = $u;
+        }
+    }
+    
+    usort($staffList, function($a, $b) {
+        $sa = $a['Usr_Status'] ?? '';
+        $sb = $b['Usr_Status'] ?? '';
+        if ($sa !== $sb) return strcmp($sa, $sb); // Active before Inactive
+        return strcmp($a['Usr_Name'] ?? '', $b['Usr_Name'] ?? '');
+    });
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -190,7 +216,7 @@ include "../layout/dashboard_layout.php";
             <th>Actions</th>
         </tr></thead>
         <tbody>
-        <?php if(!$staff || $staff->num_rows === 0): ?>
+        <?php if(empty($staffList)): ?>
             <tr><td colspan="6">
                 <div class="empty-state">
                     <div class="empty-state-icon"><i class="bi bi-person-badge"></i></div>
@@ -198,16 +224,16 @@ include "../layout/dashboard_layout.php";
                     <p>Click "Add Staff" to create the first staff account.</p>
                 </div>
             </td></tr>
-        <?php else: while($r = $staff->fetch_assoc()): ?>
+        <?php else: foreach($staffList as $r): ?>
             <tr>
                 <td>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#1a1a2e,#16213e);display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Sora',sans-serif;font-weight:700;font-size:14px;flex-shrink:0;">
-                            <?= strtoupper(substr($r['Usr_Name'],0,1)) ?>
+                            <?= strtoupper(substr($r['Usr_Name'] ?? 'S',0,1)) ?>
                         </div>
                         <div>
-                            <div style="font-weight:600;font-size:13px;"><?= htmlspecialchars($r['Usr_Name']) ?></div>
-                            <div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($r['Usr_Email']) ?></div>
+                            <div style="font-weight:600;font-size:13px;"><?= htmlspecialchars($r['Usr_Name'] ?? '') ?></div>
+                            <div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($r['Usr_Email'] ?? '') ?></div>
                         </div>
                     </div>
                 </td>
@@ -221,8 +247,8 @@ include "../layout/dashboard_layout.php";
                 </td>
                 <td style="font-size:13px;color:var(--muted);"><?= htmlspecialchars($r['Usr_Phone'] ?? '—') ?></td>
                 <td>
-                    <span class="badge-status <?= $r['Usr_Status']==='Active'?'badge-active':'badge-inactive' ?>">
-                        <?= $r['Usr_Status'] ?>
+                    <span class="badge-status <?= ($r['Usr_Status']??'')==='Active'?'badge-active':'badge-inactive' ?>">
+                        <?= $r['Usr_Status'] ?? '' ?>
                     </span>
                 </td>
                 <td>
@@ -230,17 +256,15 @@ include "../layout/dashboard_layout.php";
                         <!-- Toggle status -->
                         <form method="POST" style="display:inline;">
                             <?= csrf_field() ?>
-                            <input type="hidden" name="stf_id" value="<?= $r['Stf_ID'] ?>">
                             <input type="hidden" name="usr_id" value="<?= $r['Usr_ID'] ?>">
-                            <input type="hidden" name="new_status" value="<?= $r['Usr_Status']==='Active'?'Inactive':'Active' ?>">
-                            <button type="submit" name="toggle_status" class="btn-icon" title="<?= $r['Usr_Status']==='Active'?'Deactivate':'Activate' ?>">
-                                <i class="bi bi-<?= $r['Usr_Status']==='Active'?'pause-fill':'play-fill' ?>"></i>
+                            <input type="hidden" name="new_status" value="<?= ($r['Usr_Status']??'')==='Active'?'Inactive':'Active' ?>">
+                            <button type="submit" name="toggle_status" class="btn-icon" title="<?= ($r['Usr_Status']??'')==='Active'?'Deactivate':'Activate' ?>">
+                                <i class="bi bi-<?= ($r['Usr_Status']??'')==='Active'?'pause-fill':'play-fill' ?>"></i>
                             </button>
                         </form>
                         <!-- Delete -->
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this staff member? This cannot be undone.')">
                             <?= csrf_field() ?>
-                            <input type="hidden" name="stf_id" value="<?= $r['Stf_ID'] ?>">
                             <input type="hidden" name="usr_id" value="<?= $r['Usr_ID'] ?>">
                             <button type="submit" name="delete_staff" class="btn-icon danger" title="Delete">
                                 <i class="bi bi-trash3"></i>
@@ -249,7 +273,7 @@ include "../layout/dashboard_layout.php";
                     </div>
                 </td>
             </tr>
-        <?php endwhile; endif; ?>
+        <?php endforeach; endif; ?>
         </tbody>
     </table>
 </div></div>
@@ -321,9 +345,9 @@ include "../layout/dashboard_layout.php";
                         <label>Assigned Hub</label>
                         <select name="hub_id" class="nv-input" required>
                             <option value="">Select hub...</option>
-                            <?php if($hubs): while($h = $hubs->fetch_assoc()): ?>
-                            <option value="<?= $h['Hub_ID'] ?>"><?= htmlspecialchars($h['Hub_Name']) ?> (<?= htmlspecialchars($h['Hub_Area']) ?>)</option>
-                            <?php endwhile; endif; ?>
+                            <?php if(!empty($hubsMap)): foreach($hubsMap as $h): ?>
+                            <option value="<?= $h['Hub_ID'] ?>"><?= htmlspecialchars($h['Hub_Name']??'') ?> (<?= htmlspecialchars($h['Hub_Area']??'') ?>)</option>
+                            <?php endforeach; endif; ?>
                         </select>
                     </div>
                 </div>

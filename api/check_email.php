@@ -14,15 +14,10 @@ if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
     exit;
 }
 
-$stmt = $conn->prepare("SELECT Usr_ID FROM USER_ACCOUNT WHERE Usr_Email = ? LIMIT 1");
-$stmt->bind_param('s', $email);
-$stmt->execute();
-$stmt->store_result();
-
-if ($stmt->num_rows > 0) {
+try {
+    $user = $auth->getUserByEmail($email);
     echo json_encode(['status' => 'taken']);
-} else {
+} catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
     echo json_encode(['status' => 'available']);
 }
-$stmt->close();
 ?>

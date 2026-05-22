@@ -11,37 +11,57 @@ $activePage = "dashboard";
 $hubId      = $_SESSION['hub_id'];
 
 // Get Hub info
-$hubRes = $conn->query("SELECT * FROM HUB WHERE Hub_ID = '$hubId'");
-$hub = ($hubRes && $hubRes->num_rows > 0) ? $hubRes->fetch_assoc() : ['Hub_Name'=>'Unknown Hub','Hub_Addr'=>'—','Hub_Area'=>''];
+$hubSnapshot = $db->getReference('hubs/' . $hubId)->getSnapshot();
+$hub = $hubSnapshot->getValue() ?? ['Hub_Name'=>'Unknown Hub','Hub_Addr'=>'—','Hub_Area'=>''];
 
 // ---- STATS (specific to this Hub) ----
-// Parcels currently at this hub waiting to be assigned/processed
-// Using ORDER status 'Pickup / Drop-off' or SHIPMENT pointing to this hub
-$pendingDispatch = $conn->query("
-    SELECT COUNT(*) c FROM `ORDER` o 
-    WHERE o.Ord_Status = 'Pickup / Drop-off'
-")->fetch_assoc()['c'];
+$pendingDispatch = 0;
+$activeRiders = 0;
+$hubInventory = 0;
+$recentOrders = [];
 
-$activeRiders = $conn->query("
-    SELECT COUNT(*) c FROM RIDER WHERE Rdr_HubID = '$hubId' AND Rdr_Status = 'Active'
-")->fetch_assoc()['c'];
+// Fetch orders to calculate stats and recent bookings
+$ordersSnapshot = $db->getReference('orders')->getSnapshot();
+if ($ordersSnapshot->hasChildren()) {
+    $allOrders = $ordersSnapshot->getValue();
+    
+    // Sort for recent bookings
+    uasort($allOrders, function($a, $b) {
+        return strtotime($b['Ord_CrtdDt'] ?? 0) <=> strtotime($a['Ord_CrtdDt'] ?? 0);
+    });
 
-// Hub Inventory (Parcels physically here based on shipment history - simplistic for now)
-$hubInventory = $conn->query("
-    SELECT COUNT(*) c FROM SHIPMENT WHERE Shpm_HubID = '$hubId' AND Shpm_Status NOT IN ('Delivered', 'RTS')
-")->fetch_assoc()['c'];
+    $count = 0;
+    foreach ($allOrders as $o) {
+        $status = $o['Ord_Status'] ?? '';
+        
+        // Count pending dispatch
+        if ($status === 'Pickup / Drop-off' || $status === 'Destination Hub') {
+            $pendingDispatch++;
+        }
+        
+        // Count Hub Inventory (simplistic)
+        if (in_array($status, ['Origin Sorting Hub', 'Main Sorting Hub', 'Regional Hub', 'Destination Hub'])) {
+            $hubInventory++;
+        }
 
-// ---- RECENT WALK-IN BOOKINGS ----
-// Orders booked by this specific staff (assuming we link staff ID to order if booked via walk-in, but for now just general orders)
-$recentOrders = $conn->query("
-    SELECT o.*, p.Pcl_Wght, r.Rcpt_Name, r.Rcpt_Area, aw.AWB_TrkNum 
-    FROM `ORDER` o
-    JOIN PARCEL p ON o.Ord_PclID = p.Pcl_ID
-    JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    ORDER BY o.Ord_CrtdDt DESC
-    LIMIT 5
-");
+        // Recent orders limit 5
+        if ($count < 5) {
+            $recentOrders[] = $o;
+            $count++;
+        }
+    }
+}
+
+// Fetch active riders for this hub
+$usersSnapshot = $db->getReference('users')->orderByChild('Usr_Type')->equalTo('rider')->getSnapshot();
+if ($usersSnapshot->hasChildren()) {
+    foreach ($usersSnapshot->getValue() as $r) {
+        $rHub = $r['hub_id'] ?? $r['Rdr_HubID'] ?? '';
+        if ($rHub === $hubId && ($r['Usr_Status'] ?? '') === 'Active') {
+            $activeRiders++;
+        }
+    }
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -119,15 +139,15 @@ include "../layout/dashboard_layout.php";
                 </tr>
             </thead>
             <tbody>
-            <?php if($recentOrders->num_rows === 0): ?>
+            <?php if(empty($recentOrders)): ?>
                 <tr><td colspan="4">
                     <div class="empty-state">
                         <div class="empty-state-icon"><i class="bi bi-box"></i></div>
                         <h4>No recent bookings</h4>
                     </div>
                 </td></tr>
-            <?php else: while($r = $recentOrders->fetch_assoc()):
-                $s   = $r['Ord_Status'];
+            <?php else: foreach($recentOrders as $r):
+                $s   = $r['Ord_Status'] ?? 'Order Created';
                 $map = [
                     'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
                     'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Delivered'=>'badge-delivered',
@@ -136,12 +156,12 @@ include "../layout/dashboard_layout.php";
                 $cls = $map[$s] ?? 'badge-pending';
             ?>
                 <tr>
-                    <td><span style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['AWB_TrkNum'] ?? $r['Ord_ID']) ?></span></td>
-                    <td style="font-weight:500;"><?= htmlspecialchars($r['Rcpt_Name']) ?></td>
-                    <td style="font-size:13px;color:var(--muted);"><?= htmlspecialchars($r['Rcpt_Area'] ?? '—') ?></td>
+                    <td><span style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['awb']['AWB_TrkNum'] ?? $r['Ord_ID']) ?></span></td>
+                    <td style="font-weight:500;"><?= htmlspecialchars($r['recipient']['Rcpt_Name'] ?? '') ?></td>
+                    <td style="font-size:13px;color:var(--muted);"><?= htmlspecialchars($r['recipient']['Rcpt_Area'] ?? '—') ?></td>
                     <td><span class="badge-status <?= $cls ?>"><?= $s ?></span></td>
                 </tr>
-            <?php endwhile; endif; ?>
+            <?php endforeach; endif; ?>
             </tbody>
         </table>
     </div>

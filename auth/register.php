@@ -23,15 +23,12 @@ if(isset($_POST['step1'])){
         $error = "Please enter a valid email address.";
     }
     else {
-        $check = $conn->prepare("SELECT Usr_ID FROM USER_ACCOUNT WHERE Usr_Email = ?");
-        $check->bind_param("s", $email);
-        $check->execute();
-        $check->store_result();
-
-        if($check->num_rows > 0){
+        try {
+            $user = $auth->getUserByEmail($email);
+            // If we get here, the user exists
             $error = "An account with that email already exists.";
-        }
-        else {
+        } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
+            // User does not exist, safe to proceed
             // Save to session and generate OTP
             $_SESSION['reg_step']     = 2;
             $_SESSION['reg_fname']    = $firstName;

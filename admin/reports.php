@@ -9,67 +9,124 @@ if(!isset($_SESSION['account_id']) || $_SESSION['role'] !== 'admin'){
 $title      = "Reports & Analytics";
 $activePage = "reports";
 
-// ── Revenue ──────────────────────────────────────────────────
-$revTotalRes = $conn->query("SELECT IFNULL(SUM(f.Fee_Total),0) c FROM SHIPPING_FEE f JOIN `ORDER` o ON f.Fee_OrdID=o.Ord_ID WHERE o.Ord_Status='Delivered'");
-$revTotal    = $revTotalRes ? $revTotalRes->fetch_assoc()['c'] : 0;
+$ordersSnap = $db->getReference('orders')->getSnapshot();
+$usersSnap = $db->getReference('users')->getSnapshot();
 
-$revMonthRes = $conn->query("SELECT IFNULL(SUM(f.Fee_Total),0) c FROM SHIPPING_FEE f JOIN `ORDER` o ON f.Fee_OrdID=o.Ord_ID WHERE o.Ord_Status='Delivered' AND MONTH(o.Ord_CrtdDt)=MONTH(NOW()) AND YEAR(o.Ord_CrtdDt)=YEAR(NOW())");
-$revMonth    = $revMonthRes ? $revMonthRes->fetch_assoc()['c'] : 0;
+$usersMap = $usersSnap->getValue() ?: [];
+$orders = $ordersSnap->getValue() ?: [];
 
-// ── Order stats ───────────────────────────────────────────────
-$totalOrders = $conn->query("SELECT COUNT(*) c FROM `ORDER`")->fetch_assoc()['c'] ?? 0;
-$monthOrders = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE MONTH(Ord_CrtdDt)=MONTH(NOW()) AND YEAR(Ord_CrtdDt)=YEAR(NOW())")->fetch_assoc()['c'] ?? 0;
-$delivered   = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Delivered'")->fetch_assoc()['c'] ?? 0;
-$rts         = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='RTS'")->fetch_assoc()['c'] ?? 0;
+// Computations
+$revTotal = 0;
+$revMonth = 0;
+
+$totalOrders = 0;
+$monthOrders = 0;
+$delivered = 0;
+$rts = 0;
+
+$shippersStats = []; // Usr_ID => ['orders' => 0, 'dlvd' => 0]
+$ridersStats = [];   // Usr_ID => ['success' => 0, 'total' => 0]
+
+$statusBreak = [];   // status => cnt
+$dailyOrders = [];   // Y-m-d => cnt
+$svcBreak = [];      // svcName => cnt
+
+$thisMonth = date('Y-m');
+$sevenDaysAgo = strtotime('-7 days');
+
+foreach ($orders as $k => $o) {
+    $totalOrders++;
+    
+    $st = $o['Ord_Status'] ?? '';
+    $statusBreak[$st] = ($statusBreak[$st] ?? 0) + 1;
+    if ($st === 'Delivered') $delivered++;
+    if ($st === 'RTS') $rts++;
+    
+    $crtd = $o['Ord_CrtdDt'] ?? '';
+    $dt = substr($crtd, 0, 10);
+    if ($dt && strtotime($dt) >= $sevenDaysAgo) {
+        $dailyOrders[$dt] = ($dailyOrders[$dt] ?? 0) + 1;
+    }
+    
+    if (strpos($crtd, $thisMonth) === 0) {
+        $monthOrders++;
+    }
+    
+    $fee = (float)($o['fee']['Fee_Total'] ?? 0);
+    if ($st === 'Delivered') {
+        $revTotal += $fee;
+        if (strpos($crtd, $thisMonth) === 0) {
+            $revMonth += $fee;
+        }
+    }
+    
+    $shprId = $o['Ord_ShprID'] ?? '';
+    if ($shprId) {
+        if (!isset($shippersStats[$shprId])) $shippersStats[$shprId] = ['orders' => 0, 'dlvd' => 0];
+        $shippersStats[$shprId]['orders']++;
+        if ($st === 'Delivered') $shippersStats[$shprId]['dlvd']++;
+    }
+    
+    $svc = $o['service']['Svc_Name'] ?? 'Standard';
+    $svcBreak[$svc] = ($svcBreak[$svc] ?? 0) + 1;
+    
+    if (isset($o['delivery_attempts']) && is_array($o['delivery_attempts'])) {
+        foreach ($o['delivery_attempts'] as $att) {
+            $rid = $att['Atmp_RdrID'] ?? '';
+            $res = $att['Atmp_Rslt'] ?? '';
+            if ($rid) {
+                if (!isset($ridersStats[$rid])) $ridersStats[$rid] = ['success' => 0, 'total' => 0];
+                $ridersStats[$rid]['total']++;
+                if ($res === 'Successful') $ridersStats[$rid]['success']++;
+            }
+        }
+    }
+}
+
 $deliveryRate = $totalOrders > 0 ? round(($delivered / $totalOrders) * 100, 1) : 0;
 
-// ── Top shippers ──────────────────────────────────────────────
-$topShippers = $conn->query("
-    SELECT u.Usr_Name, COUNT(o.Ord_ID) as orders,
-           SUM(CASE WHEN o.Ord_Status='Delivered' THEN 1 ELSE 0 END) as dlvd
-    FROM `ORDER` o
-    JOIN SHIPPER sh ON o.Ord_ShprID = sh.Shpr_ID
-    JOIN USER_ACCOUNT u ON sh.Shpr_UsrID = u.Usr_ID
-    GROUP BY u.Usr_ID ORDER BY orders DESC LIMIT 5
-");
+$topShippers = [];
+foreach ($shippersStats as $id => $s) {
+    $topShippers[] = [
+        'Usr_Name' => $usersMap[$id]['Usr_Name'] ?? 'Unknown Shipper',
+        'orders' => $s['orders'],
+        'dlvd' => $s['dlvd']
+    ];
+}
+usort($topShippers, function($a, $b) { return $b['orders'] <=> $a['orders']; });
+$topShippers = array_slice($topShippers, 0, 5);
 
-// ── Top riders ────────────────────────────────────────────────
-$topRiders = $conn->query("
-    SELECT rd.Rdr_Name,
-           COUNT(CASE WHEN da.Atmp_Rslt='Successful' THEN 1 END) as success,
-           COUNT(da.Atmp_ID) as total
-    FROM DELIVERY_ATTEMPT da
-    JOIN RIDER rd ON da.Atmp_RdrID = rd.Rdr_ID
-    GROUP BY rd.Rdr_ID ORDER BY success DESC LIMIT 5
-");
+$topRiders = [];
+foreach ($ridersStats as $id => $r) {
+    $topRiders[] = [
+        'Rdr_Name' => $usersMap[$id]['Usr_Name'] ?? 'Unknown Rider',
+        'success' => $r['success'],
+        'total' => $r['total']
+    ];
+}
+usort($topRiders, function($a, $b) { return $b['success'] <=> $a['success']; });
+$topRiders = array_slice($topRiders, 0, 5);
 
-// ── Status breakdown ──────────────────────────────────────────
-$statusBreak = $conn->query("SELECT Ord_Status, COUNT(*) cnt FROM `ORDER` GROUP BY Ord_Status ORDER BY cnt DESC");
-
-// ── Daily orders — last 7 days ────────────────────────────────
-$dailyRes = $conn->query("
-    SELECT DATE(Ord_CrtdDt) as dt, COUNT(*) as cnt
-    FROM `ORDER`
-    WHERE Ord_CrtdDt >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-    GROUP BY DATE(Ord_CrtdDt) ORDER BY dt ASC
-");
+ksort($dailyOrders);
 $days = [];
-if($dailyRes) { while($d = $dailyRes->fetch_assoc()) $days[] = $d; }
+foreach ($dailyOrders as $dt => $cnt) {
+    $days[] = ['dt' => $dt, 'cnt' => $cnt];
+}
 $dayCounts = array_column($days, 'cnt');
-$maxD = !empty($dayCounts) ? max($dayCounts) : 1;   // ← THE BUG FIX
+$maxD = !empty($dayCounts) ? max($dayCounts) : 1;
 
-// ── Service breakdown ─────────────────────────────────────────
-$svcBreak = $conn->query("
-    SELECT sv.Svc_Name, COUNT(o.Ord_ID) as cnt
-    FROM `ORDER` o
-    JOIN SERVICE_TYPE sv ON o.Ord_SvcID = sv.Svc_ID
-    GROUP BY sv.Svc_ID ORDER BY cnt DESC
-");
-
-// Pre-fetch status rows so we can reuse grand total in service section
+arsort($statusBreak);
 $statusRows = [];
-if($statusBreak) { while($r = $statusBreak->fetch_assoc()) $statusRows[] = $r; }
-$grandTotal = array_sum(array_column($statusRows, 'cnt')) ?: 1;
+foreach ($statusBreak as $st => $cnt) {
+    if ($st) $statusRows[] = ['Ord_Status' => $st, 'cnt' => $cnt];
+}
+$grandTotal = $totalOrders ?: 1;
+
+arsort($svcBreak);
+$svcList = [];
+foreach ($svcBreak as $svc => $cnt) {
+    $svcList[] = ['Svc_Name' => $svc, 'cnt' => $cnt];
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -164,8 +221,8 @@ include "../layout/dashboard_layout.php";
             <h5 style="font-size:15px;margin-bottom:20px;">Service Popularity</h5>
             <?php
             $hasSvc = false;
-            if($svcBreak):
-                while($sv = $svcBreak->fetch_assoc()):
+            if(!empty($svcList)):
+                foreach($svcList as $sv):
                     $hasSvc = true;
                     $pct = round(($sv['cnt'] / $grandTotal) * 100);
             ?>
@@ -181,7 +238,7 @@ include "../layout/dashboard_layout.php";
                 </div>
                 <div style="font-family:'Sora',sans-serif;font-size:20px;font-weight:800;"><?= $sv['cnt'] ?></div>
             </div>
-            <?php endwhile; endif;
+            <?php endforeach; endif;
             if(!$hasSvc): ?>
                 <div class="empty-state" style="padding:30px 0;"><p>No orders yet</p></div>
             <?php endif; ?>
@@ -226,9 +283,9 @@ include "../layout/dashboard_layout.php";
                 <tbody>
                 <?php
                 $hasShippers = false;
-                if($topShippers):
+                if(!empty($topShippers)):
                     $i = 1;
-                    while($ts = $topShippers->fetch_assoc()):
+                    foreach($topShippers as $ts):
                         $hasShippers = true;
                 ?>
                 <tr>
@@ -237,7 +294,7 @@ include "../layout/dashboard_layout.php";
                     <td style="font-weight:700;"><?= $ts['orders'] ?></td>
                     <td style="color:var(--green);font-weight:700;"><?= $ts['dlvd'] ?></td>
                 </tr>
-                <?php endwhile; endif;
+                <?php endforeach; endif;
                 if(!$hasShippers): ?>
                 <tr><td colspan="4"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-people"></i></div><p>No shipper data yet</p></div></td></tr>
                 <?php endif; ?>
@@ -255,9 +312,9 @@ include "../layout/dashboard_layout.php";
                 <tbody>
                 <?php
                 $hasRiders = false;
-                if($topRiders):
+                if(!empty($topRiders)):
                     $i = 1;
-                    while($tr = $topRiders->fetch_assoc()):
+                    foreach($topRiders as $tr):
                         $hasRiders = true;
                         $rate = $tr['total'] > 0 ? round(($tr['success'] / $tr['total']) * 100) : 0;
                 ?>
@@ -267,7 +324,7 @@ include "../layout/dashboard_layout.php";
                     <td style="font-weight:700;"><?= $tr['success'] ?></td>
                     <td><span style="color:<?= $rate >= 80 ? 'var(--green)' : 'var(--amber)' ?>;font-weight:700;"><?= $rate ?>%</span></td>
                 </tr>
-                <?php endwhile; endif;
+                <?php endforeach; endif;
                 if(!$hasRiders): ?>
                 <tr><td colspan="4"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-bicycle"></i></div><p>No delivery data yet</p></div></td></tr>
                 <?php endif; ?>

@@ -10,27 +10,47 @@ $title      = "Dashboard";
 $activePage = "dashboard";
 $shipperId  = $_SESSION['shipper_id'] ?? '';
 
-// ---- STATS ----
-$totalOrders = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId'")->fetch_assoc()['c'];
-$activeOrders = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status NOT IN ('Delivered','RTS')")->fetch_assoc()['c'];
-$delivered   = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status='Delivered'")->fetch_assoc()['c'];
-$orderCreated     = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status='Order Created'")->fetch_assoc()['c'];
+// ---- STATS & RECENT ORDERS (Firebase) ----
+$totalOrders = 0;
+$activeOrders = 0;
+$delivered = 0;
+$orderCreated = 0;
+$recent = [];
 
-// ---- RECENT ORDERS ----
-$recent = $conn->query("
-    SELECT o.*, p.Pcl_Wght, p.Pcl_IsCOD, p.Pcl_CODAmt,
-           r.Rcpt_Name, r.Rcpt_Area,
-           s.Svc_Name,
-           aw.AWB_TrkNum
-    FROM `ORDER` o
-    JOIN PARCEL p ON o.Ord_PclID = p.Pcl_ID
-    JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
-    JOIN SERVICE_TYPE s ON o.Ord_SvcID = s.Svc_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    WHERE o.Ord_ShprID = '$shipperId'
-    ORDER BY o.Ord_CrtdDt DESC
-    LIMIT 5
-");
+$ordersSnapshot = $db->getReference('orders')
+                     ->orderByChild('Ord_ShprID')
+                     ->equalTo($shipperId)
+                     ->getSnapshot();
+
+if ($ordersSnapshot->hasChildren()) {
+    $ordersData = $ordersSnapshot->getValue();
+    
+    // Sort by Date Descending
+    uasort($ordersData, function($a, $b) {
+        $dateA = strtotime($a['Ord_CrtdDt'] ?? 0);
+        $dateB = strtotime($b['Ord_CrtdDt'] ?? 0);
+        return $dateB <=> $dateA;
+    });
+
+    foreach ($ordersData as $ordId => $o) {
+        $totalOrders++;
+        $status = $o['Ord_Status'] ?? '';
+        
+        if ($status === 'Delivered') {
+            $delivered++;
+        } elseif ($status === 'Order Created') {
+            $orderCreated++;
+            $activeOrders++;
+        } elseif ($status !== 'RTS') {
+            $activeOrders++;
+        }
+
+        // Add to recent if we have less than 5
+        if (count($recent) < 5) {
+            $recent[] = $o;
+        }
+    }
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -141,7 +161,7 @@ include "../layout/dashboard_layout.php";
                         </tr>
                     </thead>
                     <tbody>
-                    <?php if($recent->num_rows === 0): ?>
+                    <?php if(empty($recent)): ?>
                         <tr><td colspan="4">
                             <div class="empty-state">
                                 <div class="empty-state-icon"><i class="bi bi-box"></i></div>
@@ -149,21 +169,21 @@ include "../layout/dashboard_layout.php";
                                 <p>Book your first parcel to get started</p>
                             </div>
                         </td></tr>
-                    <?php else: while($r = $recent->fetch_assoc()): ?>
+                    <?php else: foreach($recent as $r): ?>
                         <tr>
                             <td>
                                 <span style="font-family:'Sora',sans-serif; font-size:13px; font-weight:700; color:var(--red);">
-                                    <?= htmlspecialchars($r['AWB_TrkNum'] ?? $r['Ord_ID']) ?>
+                                    <?= htmlspecialchars($r['awb']['AWB_TrkNum'] ?? $r['Ord_ID']) ?>
                                 </span>
                             </td>
-                            <td style="font-weight:500;"><?= htmlspecialchars($r['Rcpt_Name']) ?></td>
+                            <td style="font-weight:500;"><?= htmlspecialchars($r['recipient']['Rcpt_Name'] ?? 'Unknown') ?></td>
                             <td>
                                 <span style="text-transform:capitalize; font-size:13px;">
-                                    <?= htmlspecialchars($r['Svc_Name']) ?>
+                                    <?= htmlspecialchars($r['service']['Svc_Name'] ?? 'Unknown Service') ?>
                                 </span>
                             </td>
                             <td><?php
-                                $s = $r['Ord_Status'];
+                                $s = $r['Ord_Status'] ?? 'Order Created';
                                 $map = [
                                     'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
                                     'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Delivered'=>'badge-delivered',
@@ -173,7 +193,7 @@ include "../layout/dashboard_layout.php";
                                 echo "<span class='badge-status $cls'>$s</span>";
                             ?></td>
                         </tr>
-                    <?php endwhile; endif; ?>
+                    <?php endforeach; endif; ?>
                     </tbody>
                 </table>
             </div>

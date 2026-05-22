@@ -23,112 +23,90 @@ if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_role'])) {
         header('Location: manage_users.php'); exit();
     }
 
-    $conn->begin_transaction();
     try {
-        // Update role — prepared statement
-        $stmtRole = $conn->prepare("UPDATE USER_ACCOUNT SET Usr_Type = ? WHERE Usr_ID = ?");
-        $stmtRole->bind_param('ss', $role, $usrId);
-        $stmtRole->execute();
-        $stmtRole->close();
-
-        // Fetch user info — prepared statement
-        $stmtInfo = $conn->prepare("SELECT Usr_Name, Usr_Phone FROM USER_ACCOUNT WHERE Usr_ID = ?");
-        $stmtInfo->bind_param('s', $usrId);
-        $stmtInfo->execute();
-        $infoRes  = $stmtInfo->get_result();
-        $stmtInfo->close();
-        $userData = $infoRes->num_rows > 0 ? $infoRes->fetch_assoc() : [];
-        $name  = $userData['Usr_Name']  ?? 'New User';
-        $phone = $userData['Usr_Phone'] ?? '';
-
-        if($role === 'staff' && $hubId) {
-            $chk = $conn->prepare("SELECT Stf_ID FROM STAFF WHERE Stf_UsrID = ?");
-            $chk->bind_param('s', $usrId);
-            $chk->execute(); $chk->store_result();
-            if($chk->num_rows > 0) {
-                $chk->close();
-                $s = $conn->prepare("UPDATE STAFF SET Stf_HubID = ? WHERE Stf_UsrID = ?");
-                $s->bind_param('ss', $hubId, $usrId); $s->execute(); $s->close();
-            } else {
-                $chk->close();
-                $stfId = 'STF' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
-                $s = $conn->prepare("INSERT INTO STAFF (Stf_ID, Stf_UsrID, Stf_HubID, Stf_Role) VALUES (?, ?, ?, 'Branch Manager')");
-                $s->bind_param('sss', $stfId, $usrId, $hubId); $s->execute(); $s->close();
+        $update = ['Usr_Type' => $role];
+        
+        if ($role === 'staff' || $role === 'rider') {
+            if ($hubId) {
+                $update['hub_id'] = $hubId;
+                if ($role === 'staff') $update['Stf_HubID'] = $hubId;
+                if ($role === 'rider') $update['Rdr_HubID'] = $hubId;
             }
-        }
-        elseif ($role === 'rider' && $hubId) {
-            $chk = $conn->prepare("SELECT Rdr_ID FROM RIDER WHERE Rdr_UsrID = ?");
-            $chk->bind_param('s', $usrId);
-            $chk->execute(); $chk->store_result();
-            if($chk->num_rows === 0) {
-                $chk->close();
-                $chk = $conn->prepare("SELECT Rdr_ID FROM RIDER WHERE Rdr_Name = ?");
-                $chk->bind_param('s', $name);
-                $chk->execute(); $chk->store_result();
-            }
-            if($chk->num_rows > 0) {
-                $chkRes = $chk->get_result(); $chk->close();
-                $existRdr = $chkRes->fetch_assoc();
-                $s = $conn->prepare("UPDATE RIDER SET Rdr_HubID=?, Rdr_Status='Active', Rdr_UsrID=? WHERE Rdr_ID=?");
-                $s->bind_param('sss', $hubId, $usrId, $existRdr['Rdr_ID']); $s->execute(); $s->close();
-            } else {
-                $chk->close();
-                $rdrId   = 'RDR' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
-                $vehicle = 'Motorcycle';
-                $s = $conn->prepare("INSERT INTO RIDER (Rdr_ID, Rdr_UsrID, Rdr_HubID, Rdr_Name, Rdr_Phone, Rdr_VhcTyp, Rdr_Status) VALUES (?, ?, ?, ?, ?, ?, 'Active')");
-                $s->bind_param('ssssss', $rdrId, $usrId, $hubId, $name, $phone, $vehicle); $s->execute(); $s->close();
-            }
+        } else {
+            $update['hub_id'] = null;
+            $update['Stf_HubID'] = null;
+            $update['Rdr_HubID'] = null;
         }
 
-        // If changing away from rider, mark rider inactive
-        if($role !== 'rider') {
-            $s = $conn->prepare("UPDATE RIDER SET Rdr_Status='Inactive' WHERE Rdr_UsrID = ?");
-            $s->bind_param('s', $usrId); $s->execute(); $s->close();
-        }
-
-        $conn->commit();
+        $db->getReference('users/' . $usrId)->update($update);
+        
         $_SESSION['toast_success'] = "Role updated successfully!";
         header("Location: manage_users.php"); exit();
     } catch(Exception $e) {
-        $conn->rollback();
         $error = "Failed to update role: " . $e->getMessage();
     }
 }
 
 // ---- FILTER + SEARCH ----
-$filterRole   = $conn->real_escape_string($_GET['role'] ?? '');
-$search       = $conn->real_escape_string($_GET['q']    ?? '');
+$filterRole = trim(strtolower($_GET['role'] ?? ''));
+$search = trim(strtolower($_GET['q'] ?? ''));
 
-$where = "WHERE 1=1";
-if($filterRole) $where .= " AND u.Usr_Type = '$filterRole'";
-if($search)     $where .= " AND (u.Usr_Name LIKE '%$search%' OR u.Usr_Email LIKE '%$search%')";
-
-// Fetch all users with their hub info
-$users = $conn->query("
-    SELECT u.*,
-           s.Stf_HubID, h1.Hub_Name AS StfHubName, h1.Hub_Area AS StfHubArea,
-           r.Rdr_HubID, h2.Hub_Name AS RdrHubName, h2.Hub_Area AS RdrHubArea
-    FROM USER_ACCOUNT u
-    LEFT JOIN STAFF s  ON u.Usr_ID = s.Stf_UsrID
-    LEFT JOIN HUB h1   ON s.Stf_HubID  = h1.Hub_ID
-    LEFT JOIN RIDER r  ON (r.Rdr_UsrID = u.Usr_ID OR (r.Rdr_UsrID IS NULL AND r.Rdr_Name = u.Usr_Name))
-    LEFT JOIN HUB h2   ON r.Rdr_HubID  = h2.Hub_ID
-    $where
-    ORDER BY u.Usr_Type ASC, u.Usr_DateReg DESC
-");
-
-// Role counts for tab badges
-$countAll     = $conn->query("SELECT COUNT(*) c FROM USER_ACCOUNT")->fetch_assoc()['c'];
-$countShipper = $conn->query("SELECT COUNT(*) c FROM USER_ACCOUNT WHERE Usr_Type='shipper'")->fetch_assoc()['c'];
-$countRider   = $conn->query("SELECT COUNT(*) c FROM USER_ACCOUNT WHERE Usr_Type='rider'")->fetch_assoc()['c'];
-$countStaff   = $conn->query("SELECT COUNT(*) c FROM USER_ACCOUNT WHERE Usr_Type='staff'")->fetch_assoc()['c'];
-$countAdmin   = $conn->query("SELECT COUNT(*) c FROM USER_ACCOUNT WHERE Usr_Type='admin'")->fetch_assoc()['c'];
-
-// Fetch Hubs for the dropdown
-$hubs = $conn->query("SELECT * FROM HUB ORDER BY Hub_Name ASC");
+$hubsMap = [];
 $hubOptions = "";
-while($h = $hubs->fetch_assoc()) {
-    $hubOptions .= "<option value='{$h['Hub_ID']}'>{$h['Hub_Name']} ({$h['Hub_Area']})</option>";
+$hubsSnap = $db->getReference('hubs')->getSnapshot();
+if ($hubsSnap->hasChildren()) {
+    foreach ($hubsSnap->getValue() as $k => $h) {
+        $hubsMap[$k] = $h;
+        $name = htmlspecialchars($h['Hub_Name'] ?? '');
+        $area = htmlspecialchars($h['Hub_Area'] ?? '');
+        $id = htmlspecialchars($h['Hub_ID'] ?? '');
+        $hubOptions .= "<option value='{$id}'>{$name} ({$area})</option>";
+    }
+}
+
+$usersList = [];
+$countAll = 0;
+$countShipper = 0;
+$countRider = 0;
+$countStaff = 0;
+$countAdmin = 0;
+
+$usersSnap = $db->getReference('users')->getSnapshot();
+if ($usersSnap->hasChildren()) {
+    foreach ($usersSnap->getValue() as $u) {
+        $countAll++;
+        $type = strtolower($u['Usr_Type'] ?? '');
+        if ($type === 'shipper') $countShipper++;
+        if ($type === 'rider') $countRider++;
+        if ($type === 'staff') $countStaff++;
+        if ($type === 'admin') $countAdmin++;
+
+        if ($filterRole && $type !== $filterRole) continue;
+
+        if ($search) {
+            $match = str_contains(strtolower($u['Usr_Name'] ?? ''), $search) ||
+                     str_contains(strtolower($u['Usr_Email'] ?? ''), $search);
+            if (!$match) continue;
+        }
+
+        $hubId = $u['hub_id'] ?? '';
+        if ($hubId && isset($hubsMap[$hubId])) {
+            $u['HubName'] = $hubsMap[$hubId]['Hub_Name'] ?? '';
+            $u['HubArea'] = $hubsMap[$hubId]['Hub_Area'] ?? '';
+        } else {
+            $u['HubName'] = '';
+            $u['HubArea'] = '';
+        }
+
+        $usersList[] = $u;
+    }
+    
+    usort($usersList, function($a, $b) {
+        $ta = $a['Usr_Type'] ?? '';
+        $tb = $b['Usr_Type'] ?? '';
+        if ($ta !== $tb) return strcmp($ta, $tb);
+        return strtotime($b['Usr_DateReg'] ?? 0) <=> strtotime($a['Usr_DateReg'] ?? 0);
+    });
 }
 
 include "../layout/dashboard_layout.php";
@@ -254,7 +232,7 @@ include "../layout/dashboard_layout.php";
             </tr>
         </thead>
         <tbody>
-        <?php if(!$users || $users->num_rows === 0): ?>
+        <?php if(empty($usersList)): ?>
             <tr><td colspan="6">
                 <div class="empty-state">
                     <div class="empty-state-icon"><i class="bi bi-people"></i></div>
@@ -262,8 +240,8 @@ include "../layout/dashboard_layout.php";
                     <p><?= $search ? "No results for \"$search\"" : 'No accounts in this role.' ?></p>
                 </div>
             </td></tr>
-        <?php else: while($u = $users->fetch_assoc()):
-            $type = strtolower($u['Usr_Type']);
+        <?php else: foreach($usersList as $u):
+            $type = strtolower($u['Usr_Type'] ?? '');
             $roleColors = [
                 'shipper' => ['role-shipper', 'bi-box-seam-fill',      'Shipper'],
                 'rider'   => ['role-rider',   'bi-bicycle',            'Rider'],
@@ -272,8 +250,9 @@ include "../layout/dashboard_layout.php";
             ];
             [$badgeCls, $badgeIcon, $badgeLabel] = $roleColors[$type] ?? ['role-shipper','bi-person','Unknown'];
             $hubDisplay = '';
-            if($type === 'staff' && $u['StfHubName'])      $hubDisplay = $u['StfHubName'] . ' <span style="color:var(--muted-2)">(' . $u['StfHubArea'] . ')</span>';
-            elseif($type === 'rider' && $u['RdrHubName']) $hubDisplay = $u['RdrHubName'] . ' <span style="color:var(--muted-2)">(' . $u['RdrHubArea'] . ')</span>';
+            if(in_array($type, ['staff', 'rider']) && ($u['HubName'] ?? '')) {
+                $hubDisplay = htmlspecialchars($u['HubName']) . ' <span style="color:var(--muted-2)">(' . htmlspecialchars($u['HubArea']) . ')</span>';
+            }
         ?>
             <tr>
                 <!-- User -->
@@ -284,7 +263,7 @@ include "../layout/dashboard_layout.php";
                         </div>
                         <div>
                             <div style="font-weight:600;font-size:13px;"><?= htmlspecialchars($u['Usr_Name'] ?? '—') ?></div>
-                            <div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($u['Usr_Email']) ?></div>
+                            <div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($u['Usr_Email'] ?? '') ?></div>
                         </div>
                     </div>
                 </td>
@@ -305,13 +284,13 @@ include "../layout/dashboard_layout.php";
                 </td>
                 <!-- Status -->
                 <td>
-                    <span class="badge-status <?= $u['Usr_Status']==='Active'?'badge-active':'badge-failed' ?>">
-                        <?= $u['Usr_Status'] ?>
+                    <span class="badge-status <?= ($u['Usr_Status']??'')==='Active'?'badge-active':'badge-failed' ?>">
+                        <?= $u['Usr_Status'] ?? '' ?>
                     </span>
                 </td>
                 <!-- Joined -->
                 <td style="font-size:12px;color:var(--muted);white-space:nowrap;">
-                    <?= date('M d, Y', strtotime($u['Usr_DateReg'])) ?>
+                    <?= date('M d, Y', strtotime($u['Usr_DateReg'] ?? 'now')) ?>
                 </td>
                 <!-- Change Role -->
                 <td style="width:340px;">
@@ -336,7 +315,7 @@ include "../layout/dashboard_layout.php";
                     </form>
                 </td>
             </tr>
-        <?php endwhile; endif; ?>
+        <?php endforeach; endif; ?>
         </tbody>
     </table>
 </div></div>

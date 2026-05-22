@@ -18,24 +18,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
     $newPw   = $_POST['new_password'];
     $confirm = $_POST['confirm_password'];
 
-    // Get current hash — prepared statements
-    if($role === 'admin'){
-        $stmt = $conn->prepare("SELECT Adm_Pass FROM ADMIN_ACCOUNT WHERE Adm_ID = ?");
-        $stmt->bind_param('s', $_SESSION['account_id']);
-        $stmt->execute();
-        $hash = $stmt->get_result()->fetch_assoc()['Adm_Pass'];
-        $stmt->close();
-    } else {
-        $stmt = $conn->prepare("SELECT Usr_Pass FROM USER_ACCOUNT WHERE Usr_ID = ?");
-        $stmt->bind_param('s', $_SESSION['account_id']);
-        $stmt->execute();
-        $hash = $stmt->get_result()->fetch_assoc()['Usr_Pass'];
-        $stmt->close();
-    }
-
-    if(!password_verify($current, $hash)){
-        $error = "Current password is incorrect.";
-    } elseif(strlen($newPw) < 8){
+    if(strlen($newPw) < 8){
         $error = "New password must be at least 8 characters.";
     } elseif(!preg_match('/[A-Z]/', $newPw)){
         $error = "New password must contain at least one uppercase letter.";
@@ -44,16 +27,20 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
     } elseif($newPw !== $confirm){
         $error = "New passwords do not match.";
     } else {
-        $newHash = password_hash($newPw, PASSWORD_DEFAULT);
-        if($role === 'admin'){
-            $stmt = $conn->prepare("UPDATE ADMIN_ACCOUNT SET Adm_Pass=? WHERE Adm_ID=?");
-            $stmt->bind_param("ss", $newHash, $_SESSION['account_id']);
-        } else {
-            $stmt = $conn->prepare("UPDATE USER_ACCOUNT SET Usr_Pass=? WHERE Usr_ID=?");
-            $stmt->bind_param("ss", $newHash, $_SESSION['account_id']);
+        try {
+            // Verify current password by attempting to sign in
+            $userRec = $auth->getUser($_SESSION['account_id']);
+            $signInResult = $auth->signInWithEmailAndPassword($userRec->email, $current);
+            
+            // If successful, change the password
+            $auth->changeUserPassword($_SESSION['account_id'], $newPw);
+            $success = "Password changed successfully!";
+            
+        } catch (\Kreait\Firebase\Exception\Auth\InvalidPassword $e) {
+            $error = "Current password is incorrect.";
+        } catch (Exception $e) {
+            $error = "Failed to update password: " . $e->getMessage();
         }
-        $stmt->execute();
-        $success = "Password changed successfully!";
     }
 }
 

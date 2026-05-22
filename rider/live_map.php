@@ -24,14 +24,15 @@ $extraHead = '
 ';
 
 // Load dynamic hubs
-$hubsQuery = $conn->query("SELECT Hub_ID, Hub_Name, Hub_Lat, Hub_Lng, Hub_Area FROM HUB");
 $hubsList = [];
 $coordCounts = [];
 
-while($h = $hubsQuery->fetch_assoc()) {
-    // If hub lat/lng is missing, fallback based on area for map display purposes
-    $lat = $h['Hub_Lat'] ? (float)$h['Hub_Lat'] : null;
-    $lng = $h['Hub_Lng'] ? (float)$h['Hub_Lng'] : null;
+$hubsSnap = $db->getReference('hubs')->getSnapshot();
+if ($hubsSnap->hasChildren()) {
+    foreach ($hubsSnap->getValue() as $h) {
+        // If hub lat/lng is missing, fallback based on area for map display purposes
+        $lat = isset($h['Hub_Lat']) ? (float)$h['Hub_Lat'] : null;
+        $lng = isset($h['Hub_Lng']) ? (float)$h['Hub_Lng'] : null;
     
     if (!$lat || !$lng) {
         $area = strtolower($h['Hub_Area'] ?? '');
@@ -52,13 +53,14 @@ while($h = $hubsQuery->fetch_assoc()) {
         $lng += 0.005 * sin($angle);
     }
     
-    $hubsList[] = [
-        'id'   => $h['Hub_ID'],
-        'name' => $h['Hub_Name'],
-        'lat'  => $lat,
-        'lng'  => $lng,
-        'area' => $h['Hub_Area']
-    ];
+        $hubsList[] = [
+            'id'   => $h['Hub_ID'],
+            'name' => $h['Hub_Name'],
+            'lat'  => $lat,
+            'lng'  => $lng,
+            'area' => $h['Hub_Area'] ?? ''
+        ];
+    }
 }
 
 include "../layout/dashboard_layout.php";

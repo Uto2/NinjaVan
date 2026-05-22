@@ -13,6 +13,7 @@
  */
 
 require_once '../config/db.php';
+require_once '../config/Helper.php';
 header('Content-Type: application/json');
 header('Cache-Control: max-age=3600');
 
@@ -30,22 +31,19 @@ $seed  = trim($_GET['seed'] ?? 'default');
 // 1. Get Hub coordinates
 $hubData = ['lat' => 14.5995, 'lng' => 120.9842, 'name' => 'Manila Hub']; // Default fallback
 if ($hubId) {
-    $stmt = $conn->prepare("SELECT Hub_Name, Hub_Lat, Hub_Lng, Hub_Area FROM HUB WHERE Hub_ID = ?");
-    $stmt->bind_param('s', $hubId);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    if ($h = $res->fetch_assoc()) {
-        $lat = $h['Hub_Lat'] ? (float)$h['Hub_Lat'] : null;
-        $lng = $h['Hub_Lng'] ? (float)$h['Hub_Lng'] : null;
+    $hubSnap = $db->getReference('hubs/' . $hubId)->getSnapshot();
+    if ($hubSnap->exists()) {
+        $h = $hubSnap->getValue();
+        $lat = isset($h['Hub_Lat']) ? (float)$h['Hub_Lat'] : null;
+        $lng = isset($h['Hub_Lng']) ? (float)$h['Hub_Lng'] : null;
         if (!$lat || !$lng) {
             $harea = strtolower($h['Hub_Area'] ?? '');
             if (str_contains($harea, 'cebu') || str_contains($harea, 'visayas')) { $lat=10.3157; $lng=123.8854; }
             elseif (str_contains($harea, 'davao') || str_contains($harea, 'mindanao')) { $lat=7.1907; $lng=125.4553; }
             else { $lat=14.5995; $lng=120.9842; }
         }
-        $hubData = ['lat' => $lat, 'lng' => $lng, 'name' => $h['Hub_Name']];
+        $hubData = ['lat' => $lat, 'lng' => $lng, 'name' => $h['Hub_Name'] ?? 'Hub'];
     }
-    $stmt->close();
 }
 $addr  = trim($_GET['addr'] ?? '');
 
@@ -58,16 +56,28 @@ $seedInt = abs(crc32($seed));
 
 // A. Attempt Real Address Geocoding (Nominatim)
 if ($addr) {
-    $ctx = stream_context_create(['http' => ['timeout' => 2, 'header' => "User-Agent: NinjaVan PHP/1.0\r\n"]]);
-    $nomUrl = "https://nominatim.openstreetmap.org/search?q=" . urlencode($addr) . "&format=json&limit=1";
-    $nomRes = @file_get_contents($nomUrl, false, $ctx);
-    if ($nomRes) {
-        $nomData = json_decode($nomRes, true);
-        if (!empty($nomData) && isset($nomData[0]['lat'])) {
-            $destLat = (float)$nomData[0]['lat'];
-            $destLng = (float)$nomData[0]['lon'];
-            $zone    = explode(',', $nomData[0]['display_name'])[0]; // Shorten name
+    $ctx = stream_context_create(['http' => ['timeout' => 3, 'header' => "User-Agent: NinjaVan PHP/1.0\r\n"]]);
+    
+    // Try full address, if fails, try stripping parts (e.g. street name) to get at least the city/barangay
+    $addrParts = explode(',', $addr);
+    
+    while (count($addrParts) > 0 && $destLat === null) {
+        $searchQuery = implode(',', $addrParts);
+        $nomUrl = "https://nominatim.openstreetmap.org/search?q=" . urlencode(trim($searchQuery)) . "&format=json&limit=1";
+        $nomRes = @file_get_contents($nomUrl, false, $ctx);
+        
+        if ($nomRes) {
+            $nomData = json_decode($nomRes, true);
+            if (!empty($nomData) && isset($nomData[0]['lat'])) {
+                $destLat = (float)$nomData[0]['lat'];
+                $destLng = (float)$nomData[0]['lon'];
+                $zone    = explode(',', $nomData[0]['display_name'])[0]; // Shorten name
+                break;
+            }
         }
+        
+        // Remove the first part (most specific, e.g. street) and try again
+        array_shift($addrParts);
     }
 }
 
@@ -75,7 +85,48 @@ if ($addr) {
 if ($destLat === null) {
     // Check if the recipient area matches the Hub area (Local Delivery)
     $hubAreaStr = strtolower($h['Hub_Area'] ?? '');
-    $isLocal = ($hubAreaStr && (stripos($area, $hubAreaStr) !== false || stripos($hubAreaStr, $area) !== false));
+    $normArea = strtolower(trim($area));
+    
+    $isLocal = false;
+    if ($hubAreaStr && (stripos($area, $hubAreaStr) !== false || stripos($hubAreaStr, $area) !== false)) {
+        $isLocal = true;
+    }
+    
+    // Check if they share the same cluster
+    if (!$isLocal) {
+        $clusterMap = Helper::getClusterMap();
+        
+        $hubCluster = '';
+        $destCluster = '';
+        
+        // Find hub cluster
+        if (isset($clusterMap[$hubAreaStr])) {
+            $hubCluster = $hubAreaStr;
+        } else {
+            foreach ($clusterMap as $key => $provinces) {
+                if (in_array($hubAreaStr, $provinces)) { $hubCluster = $key; break; }
+                foreach ($provinces as $prov) {
+                    if (stripos($hubAreaStr, $prov) !== false) { $hubCluster = $key; break 2; }
+                }
+            }
+        }
+        
+        // Find dest cluster
+        if (isset($clusterMap[$normArea])) {
+            $destCluster = $normArea;
+        } else {
+            foreach ($clusterMap as $key => $provinces) {
+                if (in_array($normArea, $provinces)) { $destCluster = $key; break; }
+                foreach ($provinces as $prov) {
+                    if (stripos($normArea, $prov) !== false) { $destCluster = $key; break 2; }
+                }
+            }
+        }
+        
+        if ($hubCluster && $destCluster && $hubCluster === $destCluster) {
+            $isLocal = true;
+        }
+    }
     
     // Default to local if no area provided
     if (!$area || $area === 'Metro Manila') $isLocal = true;
@@ -89,16 +140,37 @@ if ($destLat === null) {
         $zone    = 'Local Address ' . ($seedInt % 999);
     } else {
         // Regional/Cross-Island Transport: Fallback to Area Clusters
+        $clusterMap = Helper::getClusterMap();
         $AREA_CLUSTERS = [
-            'Metro Manila' => [['lat' => 14.6760, 'lng' => 121.0437, 'zone' => 'Quezon City'], ['lat' => 14.5547, 'lng' => 121.0244, 'zone' => 'Makati']],
-            'Luzon'        => [['lat' => 14.8527, 'lng' => 120.8166, 'zone' => 'Bulacan'], ['lat' => 15.1785, 'lng' => 120.5960, 'zone' => 'Pampanga']],
-            'Visayas'      => [['lat' => 10.3157, 'lng' => 123.8854, 'zone' => 'Cebu City'], ['lat' => 10.7202, 'lng' => 122.5621, 'zone' => 'Iloilo']],
-            'Mindanao'     => [['lat' =>  7.1907, 'lng' => 125.4553, 'zone' => 'Davao City'], ['lat' =>  8.4542, 'lng' => 124.6319, 'zone' => 'Cagayan de Oro']],
+            'metro manila' => [['lat' => 14.6760, 'lng' => 121.0437, 'zone' => 'Quezon City'], ['lat' => 14.5547, 'lng' => 121.0244, 'zone' => 'Makati']],
+            'luzon'        => [['lat' => 14.8527, 'lng' => 120.8166, 'zone' => 'Bulacan'], ['lat' => 15.1785, 'lng' => 120.5960, 'zone' => 'Pampanga']],
+            'visayas'      => [['lat' => 10.3157, 'lng' => 123.8854, 'zone' => 'Cebu City'], ['lat' => 10.7202, 'lng' => 122.5621, 'zone' => 'Iloilo']],
+            'mindanao'     => [['lat' =>  7.1907, 'lng' => 125.4553, 'zone' => 'Davao City'], ['lat' =>  8.4542, 'lng' => 124.6319, 'zone' => 'Cagayan de Oro']],
         ];
-        $matchKey = 'Metro Manila';
-        foreach (array_keys($AREA_CLUSTERS) as $k) {
-            if (stripos($area, $k) !== false) { $matchKey = $k; break; }
+        
+        $matchKey = 'metro manila'; // default
+        $normArea = strtolower(trim($area));
+        
+        // 1. Direct match (e.g. "visayas" -> visayas)
+        if (isset($AREA_CLUSTERS[$normArea])) {
+            $matchKey = $normArea;
+        } else {
+            // 2. Province map check (e.g. "cebu" -> visayas)
+            foreach ($clusterMap as $key => $provinces) {
+                if (in_array($normArea, $provinces)) {
+                    $matchKey = $key;
+                    break;
+                }
+                // Also check if any province is a substring of the area (e.g. "Cebu City")
+                foreach ($provinces as $prov) {
+                    if (stripos($normArea, $prov) !== false) {
+                        $matchKey = $key;
+                        break 2;
+                    }
+                }
+            }
         }
+        
         $cluster = $AREA_CLUSTERS[$matchKey];
         $dest    = $cluster[$seedInt % count($cluster)];
         

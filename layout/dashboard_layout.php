@@ -6,6 +6,23 @@ $role       = $_SESSION['role']         ?? '';
 $name       = $_SESSION['display_name'] ?? 'User';
 $email      = $_SESSION['email']        ?? '';
 $activePage = $activePage               ?? '';
+
+$hubNameDisplay = '';
+if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
+    if (empty($_SESSION['hub_name'])) {
+        try {
+            $hubSnap = $db->getReference('hubs/' . $_SESSION['hub_id'])->getSnapshot();
+            if ($hubSnap->exists()) {
+                $_SESSION['hub_name'] = $hubSnap->getValue()['Hub_Name'] ?? 'Unknown Hub';
+            } else {
+                $_SESSION['hub_name'] = 'Unknown Hub';
+            }
+        } catch (Exception $e) {
+            $_SESSION['hub_name'] = 'Unknown Hub';
+        }
+    }
+    $hubNameDisplay = $_SESSION['hub_name'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1016,8 +1033,13 @@ $activePage = $activePage               ?? '';
     <div class="sb-role-badge">
         <div class="sb-role-dot"></div>
         <div>
-            <div class="sb-role-label">Logged in as</div>
+            <div class="sb-role-label">Logged in as <?= htmlspecialchars(ucfirst($role)) ?></div>
             <div class="sb-role-name"><?= htmlspecialchars($name) ?></div>
+            <?php if($hubNameDisplay): ?>
+            <div style="font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 4px; font-weight: 500;">
+                <i class="bi bi-geo-alt-fill" style="color: var(--red);"></i> <?= htmlspecialchars($hubNameDisplay) ?>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -1076,13 +1098,7 @@ $activePage = $activePage               ?? '';
            class="sb-link <?= $activePage === 'orders' ? 'active' : '' ?>">
             <span class="sb-icon"><i class="bi bi-diagram-3-fill"></i></span>
             Orders
-            <?php
-            if(isset($conn)){
-                $ures = $conn->query("SELECT COUNT(*) as c FROM `ORDER` WHERE Ord_Status='Order Created'");
-                $ucnt = $ures ? ($ures->fetch_assoc()['c'] ?? 0) : 0;
-                if($ucnt > 0) echo "<span class='sb-badge'>$ucnt</span>";
-            }
-            ?>
+            <span class='sb-badge' id='sb-badge-admin-orders' style='display:none;'>0</span>
         </a>
 
         <div class="sb-section-label">Analytics</div>
@@ -1163,17 +1179,7 @@ $activePage = $activePage               ?? '';
              class="sb-link <?= $activePage === 'track_rider' ? 'active' : '' ?>">
               <span class="sb-icon"><i class="bi bi-broadcast-pin"></i></span>
               Track My Rider
-              <?php
-             if (isset($conn) && isset($_SESSION['shipper_id'])) {
-                 $sid   = $_SESSION['shipper_id'];
-                  $livex = $conn->query("
-                      SELECT COUNT(*) as c FROM `ORDER` o
-                      WHERE o.Ord_ShprID = '$sid' AND o.Ord_Status = 'Out for Delivery'
-                  ");
-                  $lc = $livex ? ((int)$livex->fetch_assoc()['c']) : 0;
-                  if ($lc > 0) echo "<span class='sb-badge' style='background:var(--green);'>LIVE</span>";
-              }
-              ?>
+              <span class='sb-badge' id='sb-badge-shipper-live' style='background:var(--green); display:none;'>LIVE</span>
           </a>
  
           <?php elseif($role === 'rider'): ?>
@@ -1192,14 +1198,7 @@ $activePage = $activePage               ?? '';
            class="sb-link <?= $activePage === 'deliveries' ? 'active' : '' ?>">
             <span class="sb-icon"><i class="bi bi-truck"></i></span>
             My Deliveries
-            <?php
-            if(isset($conn) && isset($_SESSION['rider_id'])){
-                $rid = $_SESSION['rider_id'];
-                $pr = $conn->query("SELECT COUNT(*) as c FROM DELIVERY_ATTEMPT da JOIN SHIPMENT s ON da.Atmp_ShpmID=s.Shpm_ID WHERE da.Atmp_RdrID='$rid' AND s.Shpm_Status IN ('Pickup / Drop-off','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')");
-                $pc = $pr ? ($pr->fetch_assoc()['c'] ?? 0) : 0;
-                if($pc > 0) echo "<span class='sb-badge'>$pc</span>";
-            }
-            ?>
+            <span class='sb-badge' id='sb-badge-rider-pending' style='display:none;'>0</span>
         </a>
 
         <a href="/ninjavan/rider/history.php"
@@ -1477,4 +1476,77 @@ setInterval(async () => {
 
 // Initial badge load (no dropdown open)
 fetchNotifications();
+</script>
+
+<script type="module">
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+const firebaseConfig = {
+    apiKey: "<?= $_ENV['FIREBASE_API_KEY'] ?? '' ?>",
+    authDomain: "<?= $_ENV['FIREBASE_PROJECT_ID'] ?? '' ?>.firebaseapp.com",
+    databaseURL: "<?= $_ENV['FIREBASE_DATABASE_URL'] ?? '' ?>",
+    projectId: "<?= $_ENV['FIREBASE_PROJECT_ID'] ?? '' ?>"
+};
+
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const db = getDatabase(app);
+
+const userRole = "<?= $role ?? '' ?>";
+const userId = "<?= $_SESSION['account_id'] ?? '' ?>";
+
+// Realtime Sidebar Badges
+if (userRole === 'admin') {
+    const ordersRef = ref(db, 'orders');
+    onValue(ordersRef, (snapshot) => {
+        let cnt = 0;
+        if (snapshot.exists()) {
+            snapshot.forEach(child => {
+                const o = child.val();
+                if (o.Ord_Status === 'Order Created') cnt++;
+            });
+        }
+        const badge = document.getElementById('sb-badge-admin-orders');
+        if (badge) {
+            badge.innerText = cnt;
+            badge.style.display = cnt > 0 ? 'inline-block' : 'none';
+        }
+    });
+} else if (userRole === 'shipper') {
+    const ordersRef = ref(db, 'orders');
+    onValue(ordersRef, (snapshot) => {
+        let liveCnt = 0;
+        if (snapshot.exists()) {
+            snapshot.forEach(child => {
+                const o = child.val();
+                if (o.Ord_ShprID === userId && o.Ord_Status === 'Out for Delivery') liveCnt++;
+            });
+        }
+        const badge = document.getElementById('sb-badge-shipper-live');
+        if (badge) badge.style.display = liveCnt > 0 ? 'inline-block' : 'none';
+    });
+} else if (userRole === 'rider') {
+    const ordersRef = ref(db, 'orders');
+    onValue(ordersRef, (snapshot) => {
+        let pendingCnt = 0;
+        const transitStatuses = ['Pickup / Drop-off','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'];
+        if (snapshot.exists()) {
+            snapshot.forEach(child => {
+                const o = child.val();
+                if (transitStatuses.includes(o.Ord_Status) && o.delivery_attempts) {
+                    const attempts = Object.values(o.delivery_attempts);
+                    const last = attempts[attempts.length - 1];
+                    if (last && last.Atmp_RdrID === userId && last.Atmp_Rslt === 'Pending') {
+                        pendingCnt++;
+                    }
+                }
+            });
+        }
+        const badge = document.getElementById('sb-badge-rider-pending');
+        if (badge) {
+            badge.innerText = pendingCnt;
+            badge.style.display = pendingCnt > 0 ? 'inline-block' : 'none';
+        }
+    });
+}
 </script>

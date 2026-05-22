@@ -10,45 +10,68 @@ $title      = "Dashboard";
 $activePage = "dashboard";
 
 // ---- STATS ----
-$totalOrders   = $conn->query("SELECT COUNT(*) c FROM `ORDER`")->fetch_assoc()['c'];
-$totalShippers = $conn->query("SELECT COUNT(*) c FROM SHIPPER")->fetch_assoc()['c'];
-$totalRiders   = $conn->query("SELECT COUNT(*) c FROM RIDER")->fetch_assoc()['c'];
-$delivered     = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Delivered'")->fetch_assoc()['c'];
-$staging       = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Order Created'")->fetch_assoc()['c'];
-$revenue       = $conn->query("SELECT IFNULL(SUM(Fee_Total),0) c FROM SHIPPING_FEE f JOIN `ORDER` o ON f.Fee_OrdID=o.Ord_ID WHERE o.Ord_Status='Delivered'")->fetch_assoc()['c'];
+$totalOrders = 0;
+$totalShippers = 0;
+$totalRiders = 0;
+$delivered = 0;
+$staging = 0;
+$revenue = 0;
 
-// ---- STATUS BREAKDOWN ----
-$statusBreakdown = $conn->query("
-    SELECT Ord_Status, COUNT(*) as cnt
-    FROM `ORDER`
-    GROUP BY Ord_Status
-    ORDER BY cnt DESC
-");
+$usersSnap = $db->getReference('users')->getSnapshot();
+if ($usersSnap->hasChildren()) {
+    foreach ($usersSnap->getValue() as $u) {
+        $type = $u['Usr_Type'] ?? '';
+        if ($type === 'shipper') $totalShippers++;
+        if ($type === 'rider') $totalRiders++;
+    }
+}
 
-// ---- RECENT ORDERS ----
-$recentOrders = $conn->query("
-    SELECT o.*, p.Pcl_Wght, p.Pcl_IsCOD,
-           sh.Shpr_ID, u.Usr_Name as ShipperName,
-           r.Rcpt_Name, r.Rcpt_Area,
-           sv.Svc_Name,
-           aw.AWB_TrkNum,
-           f.Fee_Total
-    FROM `ORDER` o
-    JOIN PARCEL p ON o.Ord_PclID = p.Pcl_ID
-    JOIN SHIPPER sh ON o.Ord_ShprID = sh.Shpr_ID
-    JOIN USER_ACCOUNT u ON sh.Shpr_UsrID = u.Usr_ID
-    JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
-    JOIN SERVICE_TYPE sv ON o.Ord_SvcID = sv.Svc_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    LEFT JOIN SHIPPING_FEE f ON f.Fee_OrdID = o.Ord_ID
-    ORDER BY o.Ord_CrtdDt DESC
-    LIMIT 8
-");
+$statusBreakdown = [];
+$recentOrders = [];
+
+$ordersSnap = $db->getReference('orders')->getSnapshot();
+if ($ordersSnap->hasChildren()) {
+    $allOrders = $ordersSnap->getValue();
+    $totalOrders = count($allOrders);
+    
+    // Sort for recent
+    uasort($allOrders, function($a, $b) {
+        return strtotime($b['Ord_CrtdDt'] ?? 0) <=> strtotime($a['Ord_CrtdDt'] ?? 0);
+    });
+
+    foreach ($allOrders as $o) {
+        $s = $o['Ord_Status'] ?? 'Order Created';
+        
+        if ($s === 'Delivered') {
+            $delivered++;
+            $revenue += ($o['fee']['Fee_Total'] ?? 0);
+        }
+        if ($s === 'Order Created') {
+            $staging++;
+        }
+        
+        if (!isset($statusBreakdown[$s])) $statusBreakdown[$s] = 0;
+        $statusBreakdown[$s]++;
+        
+        if (count($recentOrders) < 8) {
+            $recentOrders[] = $o;
+        }
+    }
+}
+
+// Sort status breakdown by count desc
+arsort($statusBreakdown);
 
 // ---- AVAILABLE RIDERS ----
-$availRiders = $conn->query("
-    SELECT * FROM RIDER WHERE Rdr_Status = 'Active' LIMIT 4
-");
+$availRiders = [];
+if ($usersSnap->hasChildren()) {
+    foreach ($usersSnap->getValue() as $u) {
+        if (($u['Usr_Type'] ?? '') === 'rider' && ($u['Usr_Status'] ?? '') === 'Active') {
+            $availRiders[] = $u;
+            if(count($availRiders) >= 4) break;
+        }
+    }
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -112,7 +135,7 @@ include "../layout/dashboard_layout.php";
                 'RTS'            => ['badge-failed',    'RTS'],
             ];
             $rows = [];
-            while($r = $statusBreakdown->fetch_assoc()) $rows[] = $r;
+            foreach ($statusBreakdown as $s => $cnt) $rows[] = ['Ord_Status' => $s, 'cnt' => $cnt];
             $grandTotal = array_sum(array_column($rows, 'cnt')) ?: 1;
 
             foreach($rows as $r):
@@ -143,26 +166,26 @@ include "../layout/dashboard_layout.php";
                 <a href="/ninjavan/admin/manage_riders.php" class="btn-nv-ghost" style="font-size:12px; padding:5px 12px;">All</a>
             </div>
 
-            <?php if($availRiders->num_rows === 0): ?>
+            <?php if(empty($availRiders)): ?>
             <div class="empty-state" style="padding:30px 0;">
                 <div class="empty-state-icon"><i class="bi bi-bicycle"></i></div>
                 <h4>No riders available</h4>
                 <p>All riders are currently on leave</p>
             </div>
-            <?php else: while($c = $availRiders->fetch_assoc()): ?>
+            <?php else: foreach($availRiders as $c): ?>
             <div style="display:flex; align-items:center; gap:12px; padding:12px; border-radius:10px; border:1px solid var(--border); margin-bottom:8px;">
                 <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--ink),var(--ink-3));display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Sora',sans-serif;font-weight:700;font-size:14px;flex-shrink:0;">
-                    <?= strtoupper(substr($c['Rdr_Name'],0,1)) ?>
+                    <?= strtoupper(substr($c['Usr_Name'] ?? 'R',0,1)) ?>
                 </div>
                 <div style="flex:1; min-width:0;">
                     <div style="font-size:13px; font-weight:700; color:var(--ink);">
-                        <?= htmlspecialchars($c['Rdr_Name']) ?>
+                        <?= htmlspecialchars($c['Usr_Name'] ?? 'Rider') ?>
                     </div>
-                    <div style="font-size:11px; color:var(--muted);"><?= htmlspecialchars($c['Rdr_VhcTyp']) ?></div>
+                    <div style="font-size:11px; color:var(--muted);"><?= htmlspecialchars($c['Rdr_VhcTyp'] ?? 'Vehicle') ?></div>
                 </div>
-                <span class="badge-status badge-active"><?= $c['Rdr_Status'] ?></span>
+                <span class="badge-status badge-active"><?= $c['Usr_Status'] ?? 'Active' ?></span>
             </div>
-            <?php endwhile; endif; ?>
+            <?php endforeach; endif; ?>
         </div>
     </div>
 
@@ -226,32 +249,43 @@ include "../layout/dashboard_layout.php";
                 </tr>
             </thead>
             <tbody>
-            <?php if($recentOrders->num_rows === 0): ?>
+            <?php if(empty($recentOrders)): ?>
                 <tr><td colspan="7">
                     <div class="empty-state">
                         <div class="empty-state-icon"><i class="bi bi-box"></i></div>
                         <h4>No orders yet</h4>
                     </div>
                 </td></tr>
-            <?php else: while($r = $recentOrders->fetch_assoc()):
-                $s   = $r['Ord_Status'];
+            <?php else: foreach($recentOrders as $r):
+                $s   = $r['Ord_Status'] ?? 'Order Created';
                 $map = [
                     'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
                     'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Delivered'=>'badge-delivered',
                     'RTS'=>'badge-failed',
                 ];
                 $cls = $map[$s] ?? 'badge-pending';
+                
+                // Fetch shipper name from $usersSnap for displaying
+                $shipperName = 'Shipper';
+                if ($usersSnap->hasChildren()) {
+                    foreach ($usersSnap->getValue() as $u) {
+                        if (($u['Usr_ID'] ?? '') === ($r['Ord_ShprID'] ?? '')) {
+                            $shipperName = $u['Usr_Name'] ?? 'Shipper';
+                            break;
+                        }
+                    }
+                }
             ?>
                 <tr>
-                    <td><span style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['AWB_TrkNum'] ?? $r['Ord_ID']) ?></span></td>
-                    <td style="font-size:13px;"><?= htmlspecialchars($r['ShipperName']) ?></td>
-                    <td style="font-weight:500;"><?= htmlspecialchars($r['Rcpt_Name']) ?></td>
-                    <td style="font-size:13px;color:var(--muted);"><?= htmlspecialchars($r['Rcpt_Area'] ?? '—') ?></td>
-                    <td style="font-size:13px;"><?= htmlspecialchars($r['Svc_Name']) ?></td>
+                    <td><span style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['awb']['AWB_TrkNum'] ?? $r['Ord_ID']) ?></span></td>
+                    <td style="font-size:13px;"><?= htmlspecialchars($shipperName) ?></td>
+                    <td style="font-weight:500;"><?= htmlspecialchars($r['recipient']['Rcpt_Name'] ?? '') ?></td>
+                    <td style="font-size:13px;color:var(--muted);"><?= htmlspecialchars($r['recipient']['Rcpt_Area'] ?? '—') ?></td>
+                    <td style="font-size:13px;"><?= htmlspecialchars($r['service']['Svc_Name'] ?? '') ?></td>
                     <td><span class="badge-status <?= $cls ?>"><?= $s ?></span></td>
-                    <td style="font-family:'Sora',sans-serif;font-weight:700;">₱<?= number_format($r['Fee_Total'] ?? 0, 2) ?></td>
+                    <td style="font-family:'Sora',sans-serif;font-weight:700;">₱<?= number_format($r['fee']['Fee_Total'] ?? 0, 2) ?></td>
                 </tr>
-            <?php endwhile; endif; ?>
+            <?php endforeach; endif; ?>
             </tbody>
         </table>
     </div>

@@ -10,33 +10,48 @@ $title      = "My Orders";
 $activePage = "orders";
 $shipperId  = $_SESSION['shipper_id'];
 
-$statusFilter = isset($_GET['status']) ? $conn->real_escape_string($_GET['status']) : '';
-$whereClause = "WHERE o.Ord_ShprID = '$shipperId'";
-if($statusFilter) {
-    $whereClause .= " AND o.Ord_Status = '$statusFilter'";
+$statusFilter = isset($_GET['status']) ? $_GET['status'] : '';
+
+$statAll = 0;
+$statPending = 0;
+$statTransit = 0;
+$statDone = 0;
+$orders = [];
+
+$ordersSnapshot = $db->getReference('orders')
+                     ->orderByChild('Ord_ShprID')
+                     ->equalTo($shipperId)
+                     ->getSnapshot();
+
+if ($ordersSnapshot->hasChildren()) {
+    $ordersData = $ordersSnapshot->getValue();
+    
+    // Sort by Date Descending
+    uasort($ordersData, function($a, $b) {
+        $dateA = strtotime($a['Ord_CrtdDt'] ?? 0);
+        $dateB = strtotime($b['Ord_CrtdDt'] ?? 0);
+        return $dateB <=> $dateA;
+    });
+
+    foreach ($ordersData as $o) {
+        $statAll++;
+        $s = $o['Ord_Status'] ?? '';
+        
+        if (in_array($s, ['Order Created','Pickup / Drop-off'])) $statPending++;
+        if (in_array($s, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub'])) $statTransit++;
+        if ($s === 'Delivered') $statDone++;
+
+        if ($statusFilter) {
+            if ($statusFilter === 'Pending' && !in_array($s, ['Order Created','Pickup / Drop-off'])) continue;
+            if ($statusFilter === 'Transit' && !in_array($s, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub'])) continue;
+            if ($statusFilter === 'Delivered' && $s !== 'Delivered') continue;
+            // Exact match fallback
+            if (!in_array($statusFilter, ['Pending','Transit','Delivered']) && $s !== $statusFilter) continue;
+        }
+
+        $orders[] = $o;
+    }
 }
-
-$orders = $conn->query("
-    SELECT o.*, p.Pcl_Wght, p.Pcl_DeclVal, p.Pcl_IsCOD, p.Pcl_CODAmt,
-           r.Rcpt_Name, r.Rcpt_Addr, r.Rcpt_Area, r.Rcpt_Phone,
-           s.Svc_Name,
-           aw.AWB_TrkNum,
-           f.Fee_Total
-    FROM `ORDER` o
-    JOIN PARCEL p ON o.Ord_PclID = p.Pcl_ID
-    JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
-    JOIN SERVICE_TYPE s ON o.Ord_SvcID = s.Svc_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    LEFT JOIN SHIPPING_FEE f ON f.Fee_OrdID = o.Ord_ID
-    $whereClause
-    ORDER BY o.Ord_CrtdDt DESC
-");
-
-// Stats for tabs
-$statAll = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId'")->fetch_assoc()['c'];
-$statPending = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status IN ('Order Created','Pickup / Drop-off')")->fetch_assoc()['c'];
-$statTransit = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status IN ('Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub')")->fetch_assoc()['c'];
-$statDone = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status = 'Delivered'")->fetch_assoc()['c'];
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -56,10 +71,10 @@ include "../layout/dashboard_layout.php";
     <a href="?status=" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='' ? 'var(--red)' : 'var(--muted)' ?>;">
         All Orders <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statAll ?></span>
     </a>
-    <a href="?status=Order Created" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='Order Created' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='Order Created' ? 'var(--red)' : 'var(--muted)' ?>;">
+    <a href="?status=Pending" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= in_array($statusFilter, ['Pending', 'Order Created']) ? 'var(--red)' : 'transparent' ?>; color:<?= in_array($statusFilter, ['Pending', 'Order Created']) ? 'var(--red)' : 'var(--muted)' ?>;">
         Pending <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statPending ?></span>
     </a>
-    <a href="?status=Origin Sorting Hub" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= in_array($statusFilter, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub']) ? 'var(--red)' : 'transparent' ?>; color:<?= in_array($statusFilter, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub']) ? 'var(--red)' : 'var(--muted)' ?>;">
+    <a href="?status=Transit" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= in_array($statusFilter, ['Transit','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub']) ? 'var(--red)' : 'transparent' ?>; color:<?= in_array($statusFilter, ['Transit','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub']) ? 'var(--red)' : 'var(--muted)' ?>;">
         In Transit (Hubs) <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statTransit ?></span>
     </a>
     <a href="?status=Delivered" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='Delivered' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='Delivered' ? 'var(--red)' : 'var(--muted)' ?>;">
@@ -69,7 +84,7 @@ include "../layout/dashboard_layout.php";
 
 <!-- Table List -->
 <div class="row g-4">
-    <?php if($orders->num_rows === 0): ?>
+    <?php if(empty($orders)): ?>
     <div class="col-12">
         <div class="nv-card p-5 text-center">
             <div class="empty-state-icon"><i class="bi bi-box2"></i></div>
@@ -77,8 +92,8 @@ include "../layout/dashboard_layout.php";
             <p style="color:var(--muted); font-size:14px;">Try changing the filter or book a new parcel.</p>
         </div>
     </div>
-    <?php else: while($o = $orders->fetch_assoc()): 
-        $s = $o['Ord_Status'];
+    <?php else: foreach($orders as $o): 
+        $s = $o['Ord_Status'] ?? 'Order Created';
         $map = [
             'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
             'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Out for Delivery'=>'badge-delivery',
@@ -92,9 +107,9 @@ include "../layout/dashboard_layout.php";
             <div style="padding:16px 24px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.01);">
                 <div style="display:flex; align-items:center; gap:16px;">
                     <span style="font-family:'Sora',sans-serif; font-size:16px; font-weight:800; color:var(--red);">
-                        <?= htmlspecialchars($o['AWB_TrkNum'] ?? $o['Ord_ID']) ?>
+                        <?= htmlspecialchars($o['awb']['AWB_TrkNum'] ?? $o['Ord_ID']) ?>
                     </span>
-                    <span style="color:var(--muted); font-size:12px;"><i class="bi bi-calendar3"></i> <?= date('M d, Y', strtotime($o['Ord_CrtdDt'])) ?></span>
+                    <span style="color:var(--muted); font-size:12px;"><i class="bi bi-calendar3"></i> <?= date('M d, Y', strtotime($o['Ord_CrtdDt'] ?? 'now')) ?></span>
                 </div>
                 <div>
                     <span class="badge-status <?= $cls ?>"><?= $s ?></span>
@@ -105,31 +120,31 @@ include "../layout/dashboard_layout.php";
             <div style="padding:24px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:24px;">
                 <div>
                     <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Recipient</div>
-                    <div style="font-weight:600; color:var(--ink); font-size:14px;"><?= htmlspecialchars($o['Rcpt_Name']) ?></div>
-                    <div style="color:var(--muted); font-size:13px; margin-top:2px;"><i class="bi bi-telephone"></i> <?= htmlspecialchars($o['Rcpt_Phone']) ?></div>
-                    <div style="color:var(--muted); font-size:13px; margin-top:2px;"><i class="bi bi-geo-alt"></i> <?= htmlspecialchars($o['Rcpt_Area']) ?></div>
+                    <div style="font-weight:600; color:var(--ink); font-size:14px;"><?= htmlspecialchars($o['recipient']['Rcpt_Name'] ?? '') ?></div>
+                    <div style="color:var(--muted); font-size:13px; margin-top:2px;"><i class="bi bi-telephone"></i> <?= htmlspecialchars($o['recipient']['Rcpt_Phone'] ?? '') ?></div>
+                    <div style="color:var(--muted); font-size:13px; margin-top:2px;"><i class="bi bi-geo-alt"></i> <?= htmlspecialchars($o['recipient']['Rcpt_Area'] ?? '') ?></div>
                 </div>
                 
                 <div>
                     <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Parcel Details</div>
-                    <div style="color:var(--ink); font-size:13px; margin-bottom:4px;"><span style="color:var(--muted);">Service:</span> <?= htmlspecialchars($o['Svc_Name']) ?></div>
-                    <div style="color:var(--ink); font-size:13px; margin-bottom:4px;"><span style="color:var(--muted);">Weight:</span> <?= htmlspecialchars($o['Pcl_Wght']) ?> kg</div>
-                    <div style="color:var(--ink); font-size:13px;"><span style="color:var(--muted);">Declared Value:</span> ₱<?= number_format($o['Pcl_DeclVal'], 2) ?></div>
+                    <div style="color:var(--ink); font-size:13px; margin-bottom:4px;"><span style="color:var(--muted);">Service:</span> <?= htmlspecialchars($o['service']['Svc_Name'] ?? '') ?></div>
+                    <div style="color:var(--ink); font-size:13px; margin-bottom:4px;"><span style="color:var(--muted);">Weight:</span> <?= htmlspecialchars($o['parcel']['Pcl_Wght'] ?? '') ?> kg</div>
+                    <div style="color:var(--ink); font-size:13px;"><span style="color:var(--muted);">Declared Value:</span> ₱<?= number_format($o['parcel']['Pcl_DeclVal'] ?? 0, 2) ?></div>
                 </div>
 
                 <div>
                     <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Payment & COD</div>
-                    <?php if($o['Pcl_IsCOD'] === 'Yes'): ?>
+                    <?php if(($o['parcel']['Pcl_IsCOD'] ?? '') === 'Yes'): ?>
                         <div style="display:inline-block; background:var(--amber-soft); color:var(--amber); font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; margin-bottom:6px;">COD ENABLED</div>
-                        <div style="color:var(--ink); font-size:13px; font-weight:600;"><span style="color:var(--muted); font-weight:400;">To Collect:</span> ₱<?= number_format($o['Pcl_CODAmt'], 2) ?></div>
+                        <div style="color:var(--ink); font-size:13px; font-weight:600;"><span style="color:var(--muted); font-weight:400;">To Collect:</span> ₱<?= number_format($o['parcel']['Pcl_CODAmt'] ?? 0, 2) ?></div>
                     <?php else: ?>
                         <div style="display:inline-block; background:var(--surface); color:var(--muted); font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; margin-bottom:6px;">NON-COD</div>
                     <?php endif; ?>
-                    <div style="color:var(--ink); font-size:13px; margin-top:6px;"><span style="color:var(--muted);">Shipping Fee:</span> ₱<?= number_format($o['Fee_Total']??0, 2) ?></div>
+                    <div style="color:var(--ink); font-size:13px; margin-top:6px;"><span style="color:var(--muted);">Shipping Fee:</span> ₱<?= number_format($o['fee']['Fee_Total']??0, 2) ?></div>
                 </div>
 
                 <div style="display:flex; flex-direction:column; gap:8px; justify-content:center;">
-                    <a href="/ninjavan/shipper/track_parcel.php?trk=<?= urlencode($o['AWB_TrkNum']) ?>" class="btn-nv w-100" style="justify-content:center;">
+                    <a href="/ninjavan/shipper/track_parcel.php?trk=<?= urlencode($o['awb']['AWB_TrkNum'] ?? '') ?>" class="btn-nv w-100" style="justify-content:center;">
                         <i class="bi bi-geo-alt-fill"></i> Track Parcel
                     </a>
                     
@@ -142,7 +157,7 @@ include "../layout/dashboard_layout.php";
             </div>
         </div>
     </div>
-    <?php endwhile; endif; ?>
+    <?php endforeach; endif; ?>
 </div>
 
 <?php include "../layout/dashboard_footer.php"; ?>

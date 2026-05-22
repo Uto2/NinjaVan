@@ -18,50 +18,86 @@ if(isset($_POST['toggle_status'])){
     if(!in_array($newSt, ['Active','Inactive'])) {
         header("Location: manage_riders.php"); exit();
     }
-    $stmt = $conn->prepare("UPDATE RIDER SET Rdr_Status = ? WHERE Rdr_ID = ?");
-    $stmt->bind_param('ss', $newSt, $rdrId);
-    $stmt->execute();
-    $stmt->close();
-    $_SESSION['toast_success'] = "Rider status updated!";
-    header("Location: manage_riders.php"); exit();
-}
-
-// Handle hub reassignment
-if(isset($_POST['reassign_hub'])){
-    csrf_verify();
-    $rdrId = $_POST['rdr_id'];
-    $hubId = $_POST['hub_id'];
-    $stmt = $conn->prepare("UPDATE RIDER SET Rdr_HubID = ? WHERE Rdr_ID = ?");
-    $stmt->bind_param('ss', $hubId, $rdrId);
-    $stmt->execute();
-    $stmt->close();
-    $_SESSION['toast_success'] = "Rider hub reassigned!";
+    try {
+        $db->getReference('users/' . $rdrId)->update(['Usr_Status' => $newSt]);
+        // Optional: disable in Auth as well
+        if ($newSt === 'Inactive') {
+            $auth->disableUser($rdrId);
+        } else {
+            $auth->enableUser($rdrId);
+        }
+        $_SESSION['toast_success'] = "Rider status updated!";
+    } catch (Exception $e) {
+        $_SESSION['toast_error'] = "Failed to update status.";
+    }
     header("Location: manage_riders.php"); exit();
 }
 
 $filterStatus = $_GET['status'] ?? '';
-// Whitelist filter status to prevent injection in the SELECT WHERE clause
 if(!in_array($filterStatus, ['', 'Active', 'Inactive'])) $filterStatus = '';
-$where = $filterStatus ? "WHERE r.Rdr_Status='" . $conn->real_escape_string($filterStatus) . "'" : "";
 
-$riders = $conn->query("
-    SELECT r.*, h.Hub_Name, h.Hub_Area,
-           (SELECT COUNT(*) FROM DELIVERY_ATTEMPT da WHERE da.Atmp_RdrID = r.Rdr_ID AND da.Atmp_Rslt='Successful') as delivered,
-           (SELECT COUNT(*) FROM DELIVERY_ATTEMPT da WHERE da.Atmp_RdrID = r.Rdr_ID AND da.Atmp_Rslt IN('Failed','Unavailable')) as failed,
-           (SELECT COUNT(*) FROM DELIVERY_ATTEMPT da WHERE da.Atmp_RdrID = r.Rdr_ID) as total_attempts
-    FROM RIDER r
-    LEFT JOIN HUB h ON r.Rdr_HubID = h.Hub_ID
-    $where
-    ORDER BY r.Rdr_Status ASC, r.Rdr_Name ASC
-");
+$hubsMap = [];
+$hubsSnap = $db->getReference('hubs')->getSnapshot();
+if ($hubsSnap->hasChildren()) {
+    foreach ($hubsSnap->getValue() as $k => $h) {
+        $hubsMap[$k] = $h;
+    }
+}
 
-$hubs = $conn->query("SELECT * FROM HUB ORDER BY Hub_Name");
-$hubOpts = "";
-while($h = $hubs->fetch_assoc()) $hubOpts .= "<option value='{$h['Hub_ID']}'>{$h['Hub_Name']} ({$h['Hub_Area']})</option>";
+$riderAttempts = [];
+$ordersSnap = $db->getReference('orders')->getSnapshot();
+if ($ordersSnap->hasChildren()) {
+    foreach ($ordersSnap->getValue() as $o) {
+        if (isset($o['delivery_attempts'])) {
+            foreach ($o['delivery_attempts'] as $att) {
+                $rid = $att['Atmp_RdrID'] ?? '';
+                if ($rid) {
+                    if (!isset($riderAttempts[$rid])) {
+                        $riderAttempts[$rid] = ['delivered' => 0, 'failed' => 0, 'total' => 0];
+                    }
+                    $riderAttempts[$rid]['total']++;
+                    $res = $att['Atmp_Rslt'] ?? '';
+                    if ($res === 'Successful') $riderAttempts[$rid]['delivered']++;
+                    elseif ($res === 'Failed' || $res === 'Unavailable') $riderAttempts[$rid]['failed']++;
+                }
+            }
+        }
+    }
+}
 
-$totalR = $conn->query("SELECT COUNT(*) c FROM RIDER")->fetch_assoc()['c'];
-$activeR = $conn->query("SELECT COUNT(*) c FROM RIDER WHERE Rdr_Status='Active'")->fetch_assoc()['c'];
-$inactiveR = $totalR - $activeR;
+$ridersList = [];
+$totalR = 0;
+$activeR = 0;
+$inactiveR = 0;
+
+$usersSnap = $db->getReference('users')->getSnapshot();
+if ($usersSnap->hasChildren()) {
+    foreach ($usersSnap->getValue() as $u) {
+        if (($u['Usr_Type'] ?? '') === 'rider') {
+            $totalR++;
+            $status = $u['Usr_Status'] ?? 'Active';
+            if ($status === 'Active') $activeR++;
+            else $inactiveR++;
+
+            if ($filterStatus && $status !== $filterStatus) continue;
+
+            $hubId = $u['hub_id'] ?? '';
+            $u['Hub_Name'] = $hubsMap[$hubId]['Hub_Name'] ?? '';
+            $u['delivered'] = $riderAttempts[$u['Usr_ID']]['delivered'] ?? 0;
+            $u['failed'] = $riderAttempts[$u['Usr_ID']]['failed'] ?? 0;
+            $u['total_attempts'] = $riderAttempts[$u['Usr_ID']]['total'] ?? 0;
+            
+            $ridersList[] = $u;
+        }
+    }
+    
+    usort($ridersList, function($a, $b) {
+        $sa = $a['Usr_Status'] ?? '';
+        $sb = $b['Usr_Status'] ?? '';
+        if ($sa !== $sb) return strcmp($sa, $sb);
+        return strcmp($a['Usr_Name'] ?? '', $b['Usr_Name'] ?? '');
+    });
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -97,39 +133,39 @@ include "../layout/dashboard_layout.php";
     <table class="nv-table">
         <thead><tr><th>Rider</th><th>Vehicle</th><th>Hub</th><th>Delivered</th><th>Failed</th><th>Rate</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
-        <?php if($riders->num_rows === 0): ?>
+        <?php if(empty($ridersList)): ?>
             <tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-bicycle"></i></div><h4>No riders found</h4></div></td></tr>
-        <?php else: while($r = $riders->fetch_assoc()):
+        <?php else: foreach($ridersList as $r):
             $rate = $r['total_attempts'] > 0 ? round(($r['delivered']/$r['total_attempts'])*100) : 0;
         ?>
             <tr>
                 <td>
                     <div style="display:flex;align-items:center;gap:10px;">
-                        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--ink),var(--ink-3));display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Sora',sans-serif;font-weight:700;font-size:13px;"><?= strtoupper(substr($r['Rdr_Name'],0,1)) ?></div>
-                        <div><div style="font-weight:600;font-size:13px;"><?= htmlspecialchars($r['Rdr_Name']) ?></div>
-                            <div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($r['Rdr_Phone']??'—') ?></div></div>
+                        <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--ink),var(--ink-3));display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Sora',sans-serif;font-weight:700;font-size:13px;"><?= strtoupper(substr($r['Usr_Name']??'R',0,1)) ?></div>
+                        <div><div style="font-weight:600;font-size:13px;"><?= htmlspecialchars($r['Usr_Name']??'') ?></div>
+                            <div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($r['Usr_Phone']??'—') ?></div></div>
                     </div>
                 </td>
-                <td style="font-size:13px;"><?= htmlspecialchars($r['Rdr_VhcTyp']) ?></td>
-                <td style="font-size:13px;"><?= $r['Hub_Name'] ? htmlspecialchars($r['Hub_Name']) : '<span style="color:var(--muted);">—</span>' ?></td>
+                <td style="font-size:13px;"><?= htmlspecialchars($r['Rdr_VhcTyp']??'—') ?></td>
+                <td style="font-size:13px;"><?= ($r['Hub_Name']??'') ? htmlspecialchars($r['Hub_Name']) : '<span style="color:var(--muted);">—</span>' ?></td>
                 <td style="font-weight:700;color:var(--green);"><?= $r['delivered'] ?></td>
                 <td style="font-weight:700;color:var(--red);"><?= $r['failed'] ?></td>
                 <td><div style="display:flex;align-items:center;gap:6px;"><div style="height:5px;width:60px;background:var(--border);border-radius:3px;overflow:hidden;"><div style="height:100%;width:<?= $rate ?>%;background:<?= $rate>=80?'var(--green)':($rate>=50?'var(--amber)':'var(--red)') ?>;border-radius:3px;"></div></div><span style="font-size:12px;font-weight:600;"><?= $rate ?>%</span></div></td>
-                <td><span class="badge-status <?= $r['Rdr_Status']==='Active'?'badge-active':'badge-inactive' ?>"><?= $r['Rdr_Status'] ?></span></td>
+                <td><span class="badge-status <?= ($r['Usr_Status']??'')==='Active'?'badge-active':'badge-inactive' ?>"><?= $r['Usr_Status']??'' ?></span></td>
                 <td>
                     <div style="display:flex;gap:4px;">
                         <form method="POST" style="display:inline;">
                             <?= csrf_field() ?>
-                            <input type="hidden" name="rdr_id" value="<?= $r['Rdr_ID'] ?>">
-                            <input type="hidden" name="new_status" value="<?= $r['Rdr_Status']==='Active'?'Inactive':'Active' ?>">
-                            <button type="submit" name="toggle_status" class="btn-icon" title="<?= $r['Rdr_Status']==='Active'?'Deactivate':'Activate' ?>">
-                                <i class="bi bi-<?= $r['Rdr_Status']==='Active'?'pause-fill':'play-fill' ?>"></i>
+                            <input type="hidden" name="rdr_id" value="<?= $r['Usr_ID'] ?>">
+                            <input type="hidden" name="new_status" value="<?= ($r['Usr_Status']??'')==='Active'?'Inactive':'Active' ?>">
+                            <button type="submit" name="toggle_status" class="btn-icon" title="<?= ($r['Usr_Status']??'')==='Active'?'Deactivate':'Activate' ?>">
+                                <i class="bi bi-<?= ($r['Usr_Status']??'')==='Active'?'pause-fill':'play-fill' ?>"></i>
                             </button>
                         </form>
                     </div>
                 </td>
             </tr>
-        <?php endwhile; endif; ?>
+        <?php endforeach; endif; ?>
         </tbody>
     </table>
 </div></div>

@@ -13,94 +13,68 @@ $error = "";
 
 if(isset($_POST['login'])){
 
-    $email    = $conn->real_escape_string(trim($_POST['email']));
+    $email    = trim($_POST['email']);
     $password = $_POST['password'];
 
-    // =============================================
-    //  CHECK ADMIN_ACCOUNT first
-    // =============================================
-    $adminRes = $conn->query("SELECT * FROM ADMIN_ACCOUNT WHERE Adm_Email='$email' LIMIT 1");
-
-    if($adminRes && $adminRes->num_rows > 0){
-        $admin = $adminRes->fetch_assoc();
-
-        if(password_verify($password, $admin['Adm_Pass'])){
-            $_SESSION['account_id']   = $admin['Adm_ID'];
-            $_SESSION['role']         = 'admin';
-            $_SESSION['email']        = $admin['Adm_Email'];
-            $_SESSION['display_name'] = $admin['Adm_Name'];
-            header("Location: /ninjavan/admin/dashboard.php"); exit();
-        } else {
-            $error = "Incorrect password.";
-        }
-    }
-
-    // =============================================
-    //  CHECK USER_ACCOUNT (shipper or rider)
-    // =============================================
-    else {
-        $userRes = $conn->query("SELECT * FROM USER_ACCOUNT WHERE Usr_Email='$email' LIMIT 1");
-
-        if($userRes && $userRes->num_rows > 0){
-            $user = $userRes->fetch_assoc();
-
-            if($user['Usr_Status'] === 'Suspended'){
+    try {
+        $signInResult = $auth->signInWithEmailAndPassword($email, $password);
+        $uid = $signInResult->firebaseUserId();
+        
+        // Get user details from Realtime Database
+        $userSnapshot = $db->getReference('users/' . $uid)->getSnapshot();
+        if ($userSnapshot->exists()) {
+            $user = $userSnapshot->getValue();
+            
+            if (($user['Usr_Status'] ?? '') === 'Suspended') {
                 $error = "Your account has been suspended. Please contact support.";
-            }
-            else if($user['Usr_Status'] === 'Pending'){
+            } else if (($user['Usr_Status'] ?? '') === 'Pending') {
                 $error = "Your account is pending approval.";
-            }
-            else if(password_verify($password, $user['Usr_Pass'])){
-
-                // Set base session
-                $_SESSION['account_id']   = $user['Usr_ID'];
-                $_SESSION['email']        = $user['Usr_Email'];
-                $_SESSION['display_name'] = $user['Usr_Name'];
-
-                // Route based on Usr_Type
-                $role = strtolower($user['Usr_Type']);
-
-                if($role === 'shipper'){
-                    $shprRes = $conn->query("SELECT * FROM SHIPPER WHERE Shpr_UsrID='{$user['Usr_ID']}' LIMIT 1");
-                    if($shprRes && $shprRes->num_rows > 0){
-                        $shipper = $shprRes->fetch_assoc();
-                        $_SESSION['role']       = 'shipper';
-                        $_SESSION['shipper_id'] = $shipper['Shpr_ID'];
-                        header("Location: /ninjavan/shipper/dashboard.php"); exit();
-                    }
-                }
-                elseif($role === 'staff'){
-                    $staffRes = $conn->query("SELECT * FROM STAFF WHERE Stf_UsrID='{$user['Usr_ID']}' LIMIT 1");
-                    if($staffRes && $staffRes->num_rows > 0){
-                        $staff = $staffRes->fetch_assoc();
-                        $_SESSION['role']     = 'staff';
-                        $_SESSION['staff_id'] = $staff['Stf_ID'];
-                        $_SESSION['hub_id']   = $staff['Stf_HubID'];
-                        header("Location: /ninjavan/staff/dashboard.php"); exit();
-                    }
-                }
-                elseif($role === 'rider'){
-                    // Try FK lookup first, fallback to name matching
-                    $riderRes = $conn->query("SELECT * FROM RIDER WHERE Rdr_UsrID='{$user['Usr_ID']}' LIMIT 1");
-                    if(!$riderRes || $riderRes->num_rows === 0){
-                        $riderRes = $conn->query("SELECT * FROM RIDER WHERE Rdr_Name='{$user['Usr_Name']}' LIMIT 1");
-                    }
-                    if($riderRes && $riderRes->num_rows > 0){
-                        $rider = $riderRes->fetch_assoc();
-                        $_SESSION['role']     = 'rider';
-                        $_SESSION['rider_id'] = $rider['Rdr_ID'];
-                        header("Location: /ninjavan/rider/dashboard.php"); exit();
-                    }
-                }
-
-                $error = "Account profile missing. Please contact admin.";
-
             } else {
-                $error = "Incorrect password.";
+                $_SESSION['account_id']   = $uid;
+                $_SESSION['email']        = $user['Usr_Email'] ?? '';
+                $_SESSION['display_name'] = $user['Usr_Name'] ?? '';
+                
+                $role = strtolower($user['Usr_Type'] ?? '');
+                $_SESSION['role'] = $role;
+                
+                if ($role === 'shipper') {
+                    $_SESSION['shipper_id'] = $user['Shpr_ID'] ?? $uid;
+                    header("Location: /ninjavan/shipper/dashboard.php"); exit();
+                } elseif ($role === 'staff') {
+                    $_SESSION['staff_id'] = $user['Stf_ID'] ?? $uid;
+                    $_SESSION['hub_id']   = $user['hub_id'] ?? $user['Stf_HubID'] ?? '';
+                    header("Location: /ninjavan/staff/dashboard.php"); exit();
+                } elseif ($role === 'rider') {
+                    $_SESSION['rider_id'] = $user['Usr_ID'] ?? $uid;
+                    $_SESSION['hub_id']   = $user['hub_id'] ?? $user['Rdr_HubID'] ?? '';
+                    header("Location: /ninjavan/rider/dashboard.php"); exit();
+                } elseif ($role === 'admin') {
+                    header("Location: /ninjavan/admin/dashboard.php"); exit();
+                }
+                
+                $error = "Account profile missing or invalid role. Please contact admin.";
             }
         } else {
-            $error = "No account found with that email.";
+            // Check if it's an admin in a separate admins collection just in case
+            $adminSnapshot = $db->getReference('admins/' . $uid)->getSnapshot();
+            if ($adminSnapshot->exists()) {
+                $admin = $adminSnapshot->getValue();
+                $_SESSION['account_id']   = $uid;
+                $_SESSION['role']         = 'admin';
+                $_SESSION['email']        = $admin['Adm_Email'] ?? '';
+                $_SESSION['display_name'] = $admin['Adm_Name'] ?? '';
+                header("Location: /ninjavan/admin/dashboard.php"); exit();
+            } else {
+                $error = "User document not found in database.";
+            }
         }
+    } catch (\Kreait\Firebase\Exception\Auth\InvalidPassword $e) {
+        $error = "Incorrect password.";
+    } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
+        $error = "No account found with that email.";
+    } catch (\Exception $e) {
+        // Catch all other errors including invalid credentials in newer SDKs
+        $error = "Login failed: Invalid email or password.";
     }
 }
 ?>

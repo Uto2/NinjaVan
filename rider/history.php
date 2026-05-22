@@ -11,27 +11,52 @@ $activePage = "history";
 $riderId    = $_SESSION['rider_id'];
 
 $filter = $_GET['result'] ?? '';
-$where = "WHERE da.Atmp_RdrID = '$riderId' AND da.Atmp_Rslt IN ('Successful','Failed','Unavailable')";
-if($filter === 'success') $where .= " AND da.Atmp_Rslt = 'Successful'";
-elseif($filter === 'failed') $where .= " AND da.Atmp_Rslt IN ('Failed','Unavailable')";
 
-$history = $conn->query("
-    SELECT da.*, s.Shpm_Status, o.Ord_ID,
-           p.Pcl_Wght, p.Pcl_IsCOD, p.Pcl_CODAmt,
-           r.Rcpt_Name, r.Rcpt_Area,
-           aw.AWB_TrkNum
-    FROM DELIVERY_ATTEMPT da
-    JOIN SHIPMENT s ON da.Atmp_ShpmID = s.Shpm_ID
-    JOIN `ORDER` o ON s.Shpm_OrdID = o.Ord_ID
-    JOIN PARCEL p ON o.Ord_PclID = p.Pcl_ID
-    JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    $where
-    ORDER BY da.Atmp_Date DESC
-");
+$history = [];
+$totalDone = 0;
+$totalFail = 0;
 
-$totalDone = $conn->query("SELECT COUNT(*) c FROM DELIVERY_ATTEMPT WHERE Atmp_RdrID='$riderId' AND Atmp_Rslt='Successful'")->fetch_assoc()['c'];
-$totalFail = $conn->query("SELECT COUNT(*) c FROM DELIVERY_ATTEMPT WHERE Atmp_RdrID='$riderId' AND Atmp_Rslt IN('Failed','Unavailable')")->fetch_assoc()['c'];
+$ordersSnap = $db->getReference('orders')->getSnapshot();
+if ($ordersSnap->hasChildren()) {
+    $allOrders = $ordersSnap->getValue();
+    
+    foreach ($allOrders as $o) {
+        if (isset($o['delivery_attempts'])) {
+            foreach ($o['delivery_attempts'] as $att) {
+                if (($att['Atmp_RdrID'] ?? '') === $riderId) {
+                    $res = $att['Atmp_Rslt'] ?? '';
+                    $type = $att['Atmp_Type'] ?? 'Delivery';
+                    
+                    if ($type === 'Pickup') continue; // Ignore pickups in delivery history
+
+                    if ($res === 'Successful') {
+                        $totalDone++;
+                    } else if ($res === 'Failed' || $res === 'Unavailable') {
+                        $totalFail++;
+                    }
+                    
+                    if (in_array($res, ['Successful', 'Failed', 'Unavailable'])) {
+                        // Check filter
+                        $passFilter = true;
+                        if ($filter === 'success' && $res !== 'Successful') $passFilter = false;
+                        if ($filter === 'failed' && !in_array($res, ['Failed', 'Unavailable'])) $passFilter = false;
+                        
+                        if ($passFilter) {
+                            $row = $o;
+                            $row['Attempt'] = $att;
+                            $history[] = $row;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    uasort($history, function($a, $b) {
+        return strtotime($b['Attempt']['Atmp_Date'] ?? 0) <=> strtotime($a['Attempt']['Atmp_Date'] ?? 0);
+    });
+}
+
 $totalAll = $totalDone + $totalFail;
 $rate = $totalAll > 0 ? round(($totalDone/$totalAll)*100) : 0;
 
@@ -69,22 +94,22 @@ include "../layout/dashboard_layout.php";
     <table class="nv-table">
         <thead><tr><th>Tracking</th><th>Recipient</th><th>Area</th><th>Weight</th><th>COD</th><th>Result</th><th>Date</th><th>Details</th></tr></thead>
         <tbody>
-        <?php if($history->num_rows === 0): ?>
+        <?php if(empty($history)): ?>
             <tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-clock-history"></i></div><h4>No delivery history</h4><p>Completed deliveries will appear here</p></div></td></tr>
-        <?php else: while($r = $history->fetch_assoc()):
-            $isSuccess = $r['Atmp_Rslt'] === 'Successful';
+        <?php else: foreach($history as $r):
+            $isSuccess = ($r['Attempt']['Atmp_Rslt'] ?? '') === 'Successful';
         ?>
             <tr>
-                <td><div style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['AWB_TrkNum'] ?? $r['Ord_ID']) ?></div></td>
-                <td style="font-weight:500;"><?= htmlspecialchars($r['Rcpt_Name']) ?></td>
-                <td style="font-size:12px;color:var(--muted);"><?= htmlspecialchars($r['Rcpt_Area']??'—') ?></td>
-                <td style="font-size:13px;"><?= $r['Pcl_Wght'] ?> kg</td>
-                <td><?= $r['Pcl_IsCOD']==='Yes' ? '<span style="color:var(--amber);font-weight:700;">₱'.number_format($r['Pcl_CODAmt'],2).'</span>' : '<span style="color:var(--muted);">—</span>' ?></td>
-                <td><span class="badge-status <?= $isSuccess?'badge-delivered':'badge-failed' ?>"><?= $r['Atmp_Rslt'] ?></span></td>
-                <td style="font-size:12px;color:var(--muted);"><?= date('M j, g:iA', strtotime($r['Atmp_Date'])) ?></td>
-                <td style="font-size:12px;color:var(--muted);"><?= $isSuccess ? 'Signed: '.htmlspecialchars($r['Atmp_Sign']??'—') : htmlspecialchars($r['Atmp_FailRsn']??'—') ?></td>
+                <td><div style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['awb']['AWB_TrkNum'] ?? $r['Ord_ID']) ?></div></td>
+                <td style="font-weight:500;"><?= htmlspecialchars($r['recipient']['Rcpt_Name'] ?? '') ?></td>
+                <td style="font-size:12px;color:var(--muted);"><?= htmlspecialchars($r['recipient']['Rcpt_Area'] ?? '—') ?></td>
+                <td style="font-size:13px;"><?= $r['parcel']['Pcl_Wght'] ?? 0 ?> kg</td>
+                <td><?= ($r['parcel']['Pcl_IsCOD']??'')==='Yes' ? '<span style="color:var(--amber);font-weight:700;">₱'.number_format($r['parcel']['Pcl_CODAmt']??0,2).'</span>' : '<span style="color:var(--muted);">—</span>' ?></td>
+                <td><span class="badge-status <?= $isSuccess?'badge-delivered':'badge-failed' ?>"><?= $r['Attempt']['Atmp_Rslt'] ?? '' ?></span></td>
+                <td style="font-size:12px;color:var(--muted);"><?= date('M j, g:iA', strtotime($r['Attempt']['Atmp_Date'] ?? 'now')) ?></td>
+                <td style="font-size:12px;color:var(--muted);"><?= $isSuccess ? 'Signed: '.htmlspecialchars($r['Attempt']['Atmp_Sign']??'—') : htmlspecialchars($r['Attempt']['Atmp_FailRsn']??'—') ?></td>
             </tr>
-        <?php endwhile; endif; ?>
+        <?php endforeach; endif; ?>
         </tbody>
     </table>
 </div></div>

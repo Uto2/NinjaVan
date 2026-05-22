@@ -11,52 +11,70 @@ $activePage = "dashboard";
 $riderId    = $_SESSION['rider_id'] ?? '';
 
 // ---- STATS ----
-// Active deliveries assigned to this rider
-$assigned  = $conn->query("
-    SELECT COUNT(DISTINCT s.Shpm_ID) as c
-    FROM DELIVERY_ATTEMPT da
-    JOIN SHIPMENT s ON da.Atmp_ShpmID = s.Shpm_ID
-    WHERE da.Atmp_RdrID = '$riderId'
-    AND s.Shpm_Status IN ('Pickup / Drop-off','Out for Delivery')
-")->fetch_assoc()['c'];
+$assigned = 0;
+$delivered = 0;
+$failed = 0;
+$total = 0;
+$today = [];
 
-// Completed deliveries
-$delivered = $conn->query("
-    SELECT COUNT(*) as c FROM DELIVERY_ATTEMPT
-    WHERE Atmp_RdrID = '$riderId' AND Atmp_Rslt = 'Successful'
-")->fetch_assoc()['c'];
+$ordersRef = $db->getReference('orders');
+$ordersSnap = $ordersRef->getSnapshot();
 
-// Failed attempts
-$failed = $conn->query("
-    SELECT COUNT(*) as c FROM DELIVERY_ATTEMPT
-    WHERE Atmp_RdrID = '$riderId' AND Atmp_Rslt IN ('Failed','Unavailable')
-")->fetch_assoc()['c'];
+if ($ordersSnap->hasChildren()) {
+    $allOrders = $ordersSnap->getValue();
+    
+    // Sort for recent
+    uasort($allOrders, function($a, $b) {
+        return strtotime($b['Ord_CrtdDt'] ?? 0) <=> strtotime($a['Ord_CrtdDt'] ?? 0);
+    });
 
-// Total attempts
-$total = $conn->query("
-    SELECT COUNT(*) as c FROM DELIVERY_ATTEMPT WHERE Atmp_RdrID = '$riderId'
-")->fetch_assoc()['c'];
+    foreach ($allOrders as $o) {
+        // Check if assigned to this rider via Rider_ID or delivery_attempts
+        $isAssigned = false;
+        
+        if (($o['Rider_ID'] ?? '') === $riderId) {
+            $isAssigned = true;
+        } else if (isset($o['delivery_attempts'])) {
+            foreach ($o['delivery_attempts'] as $att) {
+                if (($att['Atmp_RdrID'] ?? '') === $riderId) {
+                    $isAssigned = true; break;
+                }
+            }
+        }
+        
+        if ($isAssigned) {
+            $status = $o['Ord_Status'] ?? '';
+            
+            // Count attempts
+            if (isset($o['delivery_attempts'])) {
+                foreach ($o['delivery_attempts'] as $att) {
+                    if (($att['Atmp_RdrID'] ?? '') === $riderId) {
+                        $total++;
+                        $r = $att['Atmp_Rslt'] ?? '';
+                        $type = $att['Atmp_Type'] ?? 'Delivery';
+                        
+                        if ($r === 'Successful' && $type !== 'Pickup') {
+                            $delivered++;
+                        }
+                        if ($r === 'Failed' || $r === 'Unavailable') {
+                            $failed++;
+                        }
+                    }
+                }
+            }
+            
+            // Active deliveries assigned to this rider
+            if (in_array($status, ['Pickup / Drop-off', 'Out for Delivery'])) {
+                $assigned++;
+                if (count($today) < 5) {
+                    $today[] = $o;
+                }
+            }
+        }
+    }
+}
 
 $rate = $total > 0 ? round(($delivered / $total) * 100) : 0;
-
-// ---- ACTIVE DELIVERIES ----
-$today = $conn->query("
-    SELECT da.*, s.Shpm_Status, s.Shpm_OrdID,
-           o.Ord_ID, o.Ord_Status,
-           p.Pcl_ID, p.Pcl_Wght,
-           r.Rcpt_Name, r.Rcpt_Addr, r.Rcpt_Area,
-           aw.AWB_TrkNum
-    FROM DELIVERY_ATTEMPT da
-    JOIN SHIPMENT s ON da.Atmp_ShpmID = s.Shpm_ID
-    JOIN `ORDER` o ON s.Shpm_OrdID = o.Ord_ID
-    JOIN PARCEL p ON o.Ord_PclID = p.Pcl_ID
-    JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    WHERE da.Atmp_RdrID = '$riderId'
-    AND s.Shpm_Status IN ('Pickup / Drop-off','Out for Delivery')
-    ORDER BY da.Atmp_Date DESC
-    LIMIT 5
-");
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -121,7 +139,7 @@ include "../layout/dashboard_layout.php";
                         </tr>
                     </thead>
                     <tbody>
-                    <?php if($today->num_rows === 0): ?>
+                    <?php if(empty($today)): ?>
                         <tr><td colspan="4">
                             <div class="empty-state">
                                 <div class="empty-state-icon"><i class="bi bi-truck"></i></div>
@@ -129,17 +147,17 @@ include "../layout/dashboard_layout.php";
                                 <p>You're all caught up!</p>
                             </div>
                         </td></tr>
-                    <?php else: while($r = $today->fetch_assoc()): ?>
+                    <?php else: foreach($today as $r): ?>
                         <tr>
                             <td>
                                 <span style="font-family:'Sora',sans-serif; font-size:13px; font-weight:700; color:var(--red);">
-                                    <?= htmlspecialchars($r['AWB_TrkNum'] ?? $r['Ord_ID']) ?>
+                                    <?= htmlspecialchars($r['awb']['AWB_TrkNum'] ?? $r['Ord_ID']) ?>
                                 </span>
                             </td>
-                            <td style="font-weight:500;"><?= htmlspecialchars($r['Rcpt_Name']) ?></td>
-                            <td style="color:var(--muted); font-size:13px;"><?= htmlspecialchars($r['Rcpt_Area'] ?? '—') ?></td>
+                            <td style="font-weight:500;"><?= htmlspecialchars($r['recipient']['Rcpt_Name'] ?? '') ?></td>
+                            <td style="color:var(--muted); font-size:13px;"><?= htmlspecialchars($r['recipient']['Rcpt_Area'] ?? '—') ?></td>
                             <td><?php
-                                $s = $r['Shpm_Status'];
+                                $s = $r['Ord_Status'] ?? '';
                                 $map = [
                                     'Pickup / Drop-off'=>'badge-confirmed',
                                     'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit',
@@ -152,7 +170,7 @@ include "../layout/dashboard_layout.php";
                                 echo "<span class='badge-status $cls'>$s</span>";
                             ?></td>
                         </tr>
-                    <?php endwhile; endif; ?>
+                    <?php endforeach; endif; ?>
                     </tbody>
                 </table>
             </div>

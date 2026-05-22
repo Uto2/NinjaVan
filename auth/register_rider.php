@@ -6,16 +6,22 @@ $error = "";
 $success = "";
 
 // Fetch Hubs for the dropdown
-$hubs = $conn->query("SELECT * FROM HUB ORDER BY Hub_Name ASC");
+$hubsSnapshot = $db->getReference('hubs')->getSnapshot();
+$hubs = [];
+if ($hubsSnapshot->hasChildren()) {
+    foreach ($hubsSnapshot->getValue() as $key => $hub) {
+        $hubs[] = $hub;
+    }
+}
 
 if(isset($_POST['register_rider'])){
-    $firstName = $conn->real_escape_string(trim($_POST['first_name']));
-    $lastName  = $conn->real_escape_string(trim($_POST['last_name']));
+    $firstName = trim($_POST['first_name']);
+    $lastName  = trim($_POST['last_name']);
     $name      = $firstName . ' ' . $lastName;
-    $email     = $conn->real_escape_string(trim($_POST['email']));
-    $phone     = $conn->real_escape_string(trim($_POST['phone']));
-    $vehicle   = $conn->real_escape_string($_POST['vehicle_type']);
-    $hubId     = $conn->real_escape_string($_POST['hub_id']);
+    $email     = trim($_POST['email']);
+    $phone     = trim($_POST['phone']);
+    $vehicle   = $_POST['vehicle_type'];
+    $hubId     = $_POST['hub_id'];
     $password  = $_POST['password'];
     $confirm   = $_POST['confirm_password'];
 
@@ -30,36 +36,46 @@ if(isset($_POST['register_rider'])){
     }
     else {
         // Check email uniqueness
-        $check = $conn->query("SELECT Usr_ID FROM USER_ACCOUNT WHERE Usr_Email = '$email' LIMIT 1");
-        if($check && $check->num_rows > 0){
+        try {
+            $user = $auth->getUserByEmail($email);
             $error = "An account with that email already exists.";
-        }
-        else {
-            $conn->begin_transaction();
+        } catch (\Kreait\Firebase\Exception\Auth\UserNotFound $e) {
             try {
                 // Generate IDs
-                $usrId = 'USR-' . strtoupper(substr(uniqid(), -6));
                 $rdrId = 'RDR-' . strtoupper(substr(uniqid(), -6));
-                $hashedPass = password_hash($password, PASSWORD_BCRYPT);
-
-                // Insert into USER_ACCOUNT
-                $insUser = $conn->query("INSERT INTO USER_ACCOUNT (Usr_ID, Usr_Name, Usr_Email, Usr_Pass, Usr_Phone, Usr_Type, Usr_Status) 
-                                         VALUES ('$usrId', '$name', '$email', '$hashedPass', '$phone', 'rider', 'Active')");
-
-                // Insert into RIDER
-                $insRider = $conn->query("INSERT INTO RIDER (Rdr_ID, Rdr_UsrID, Rdr_HubID, Rdr_Name, Rdr_Phone, Rdr_VhcTyp, Rdr_Status) 
-                                          VALUES ('$rdrId', '$usrId', '$hubId', '$name', '$phone', '$vehicle', 'Active')");
-
-                if ($insUser && $insRider) {
-                    $conn->commit();
-                    $_SESSION['success_msg'] = "Rider account created successfully! Please log in below.";
-                    header("Location: login.php"); exit();
-                } else {
-                    throw new Exception("Database insert failed.");
+                
+                // Create Firebase User
+                $authProps = [
+                    'email' => $email,
+                    'emailVerified' => true,
+                    'password' => $password,
+                    'displayName' => $name,
+                ];
+                if (strlen($phone) == 10) {
+                    $authProps['phoneNumber'] = '+63' . $phone;
                 }
-            } catch(Exception $e) {
-                $conn->rollback();
-                $error = "Failed to create rider account: " . $e->getMessage();
+                $createdUser = $auth->createUser($authProps);
+                $usrId = $createdUser->uid;
+
+                // Insert into Realtime Database users node
+                $db->getReference('users/' . $usrId)->set([
+                    'Usr_ID' => $usrId,
+                    'Usr_Name' => $name,
+                    'Usr_Email' => $email,
+                    'Usr_Phone' => $phone,
+                    'Usr_Type' => 'rider',
+                    'Usr_Status' => 'Active',
+                    'Usr_DateReg' => date('c'),
+                    'Rdr_ID' => $rdrId,
+                    'Rdr_HubID' => $hubId,
+                    'hub_id' => $hubId,
+                    'Rdr_VhcTyp' => $vehicle
+                ]);
+
+                $_SESSION['success_msg'] = "Rider account created successfully! Please log in below.";
+                header("Location: login.php"); exit();
+            } catch(Exception $ex) {
+                $error = "Failed to create rider account: " . $ex->getMessage();
             }
         }
     }
@@ -169,11 +185,11 @@ if(isset($_POST['register_rider'])){
             <div class="nv-select-wrap">
                 <select name="hub_id" class="nv-select" required>
                     <option value="">Select your local branch...</option>
-                    <?php while($h = $hubs->fetch_assoc()): ?>
-                        <option value="<?= $h['Hub_ID'] ?>" <?= (($_POST['hub_id'] ?? '') === $h['Hub_ID']) ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($h['Hub_Name']) ?> (<?= htmlspecialchars($h['Hub_Area']) ?>)
+                    <?php foreach($hubs as $h): ?>
+                        <option value="<?= htmlspecialchars($h['Hub_ID'] ?? '') ?>" <?= (($_POST['hub_id'] ?? '') === ($h['Hub_ID'] ?? '')) ? 'selected' : '' ?>>
+                            <?= htmlspecialchars($h['Hub_Name'] ?? '') ?> (<?= htmlspecialchars($h['Hub_Area'] ?? '') ?>)
                         </option>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 </select>
                 <i class="bi bi-chevron-down nv-select-icon"></i>
             </div>

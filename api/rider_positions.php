@@ -26,20 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Ensure RIDER_GPS table exists
-    $tableCheck = $conn->query("SHOW TABLES LIKE 'RIDER_GPS'");
-    if (!$tableCheck || $tableCheck->num_rows === 0) {
-        $conn->query("
-            CREATE TABLE RIDER_GPS (
-                GPS_RdrID VARCHAR(20) PRIMARY KEY,
-                GPS_Lat DECIMAL(10,7) NOT NULL,
-                GPS_Lng DECIMAL(10,7) NOT NULL,
-                GPS_UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (GPS_RdrID) REFERENCES RIDER(Rdr_ID) ON DELETE CASCADE
-            )
-        ");
-    }
-
     $rid = $_SESSION['rider_id'];
     $lat = isset($_POST['lat']) ? (float)$_POST['lat'] : 0;
     $lng = isset($_POST['lng']) ? (float)$_POST['lng'] : 0;
@@ -50,132 +36,109 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $stmt = $conn->prepare(
-        "INSERT INTO RIDER_GPS (GPS_RdrID, GPS_Lat, GPS_Lng)
-         VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-             GPS_Lat       = VALUES(GPS_Lat),
-             GPS_Lng       = VALUES(GPS_Lng),
-             GPS_UpdatedAt = NOW()"
-    );
-    $stmt->bind_param('sdd', $rid, $lat, $lng);
-    $ok = $stmt->execute();
-    $stmt->close();
-
-    echo json_encode(['ok' => $ok]);
+    try {
+        $db->getReference('users/' . $rid . '/gps')->set([
+            'lat' => $lat,
+            'lng' => $lng,
+            'updated_at' => date('c')
+        ]);
+        echo json_encode(['ok' => true]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
     exit;
 }
 
 // ── GET: return all active riders and their delivery statuses ───────────
 
-// Ensure RIDER_GPS table exists to avoid SQL errors in JOIN
-$tableCheck = $conn->query("SHOW TABLES LIKE 'RIDER_GPS'");
-if (!$tableCheck || $tableCheck->num_rows === 0) {
-    $conn->query("
-        CREATE TABLE RIDER_GPS (
-            GPS_RdrID VARCHAR(20) PRIMARY KEY,
-            GPS_Lat DECIMAL(10,7) NOT NULL,
-            GPS_Lng DECIMAL(10,7) NOT NULL,
-            GPS_UpdatedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            FOREIGN KEY (GPS_RdrID) REFERENCES RIDER(Rdr_ID) ON DELETE CASCADE
-        )
-    ");
-}
-
-// Ensure Hub_Lat and Hub_Lng exist
-$hubCols = $conn->query("SHOW COLUMNS FROM HUB LIKE 'Hub_Lat'");
-if($hubCols->num_rows === 0) {
-    $conn->query("ALTER TABLE HUB ADD COLUMN Hub_Lat DECIMAL(10,7) NULL, ADD COLUMN Hub_Lng DECIMAL(10,7) NULL");
-}
-
-$res = $conn->query("
-    SELECT
-        r.Rdr_ID, r.Rdr_Name, r.Rdr_VhcTyp, r.Rdr_Status,
-        h.Hub_Name,
-        h.Hub_ID,
-        -- GPS: real if available, hub coords if not (fallback)
-        COALESCE(g.GPS_Lat, h.Hub_Lat) AS lat,
-        COALESCE(g.GPS_Lng, h.Hub_Lng) AS lng,
-        (g.GPS_Lat IS NOT NULL) AS has_gps,
-        DATE_FORMAT(g.GPS_UpdatedAt, '%b %e, %l:%i %p') AS updated_at,
-        TIMESTAMPDIFF(MINUTE, g.GPS_UpdatedAt, NOW()) AS age_min,
-        -- Active parcel details (for route simulation)
-        rcpt.Rcpt_Area AS rcpt_area,
-        rcpt.Rcpt_Addr AS rcpt_addr,
-        active_da.Shpm_Status AS delivery_status,
-        aw.AWB_TrkNum AS tracking_num,
-        o.Ord_ID AS active_order_id,
-        (
-            SELECT COUNT(*)
-            FROM   DELIVERY_ATTEMPT da2
-            JOIN   SHIPMENT s2 ON da2.Atmp_ShpmID = s2.Shpm_ID
-            WHERE  da2.Atmp_RdrID = r.Rdr_ID
-              AND  s2.Shpm_Status IN ('Pickup / Drop-off','Origin Sorting Hub',
-                'Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')
-              AND  da2.Atmp_Rslt = 'Pending'
-        ) AS active_parcels
-    FROM RIDER r
-    LEFT JOIN RIDER_GPS g ON g.GPS_RdrID = r.Rdr_ID
-    LEFT JOIN HUB h ON h.Hub_ID = r.Rdr_HubID
-    LEFT JOIN (
-        -- Get only the most recent active delivery attempt per rider
-        SELECT da.Atmp_RdrID, s.Shpm_Status, s.Shpm_OrdID
-        FROM DELIVERY_ATTEMPT da
-        JOIN SHIPMENT s ON da.Atmp_ShpmID = s.Shpm_ID
-        WHERE s.Shpm_Status IN ('Pickup / Drop-off','Origin Sorting Hub',
-            'Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')
-          AND da.Atmp_Rslt = 'Pending'
-        -- Use GROUP BY instead of ORDER BY LIMIT in a subquery join
-        AND da.Atmp_ID = (
-            SELECT Atmp_ID FROM DELIVERY_ATTEMPT da3
-            JOIN SHIPMENT s3 ON da3.Atmp_ShpmID = s3.Shpm_ID
-            WHERE da3.Atmp_RdrID = da.Atmp_RdrID
-              AND s3.Shpm_Status IN ('Pickup / Drop-off','Origin Sorting Hub',
-                'Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')
-              AND da3.Atmp_Rslt = 'Pending'
-            ORDER BY da3.Atmp_ID DESC LIMIT 1
-        )
-    ) active_da ON active_da.Atmp_RdrID = r.Rdr_ID
-    LEFT JOIN `ORDER` o ON o.Ord_ID = active_da.Shpm_OrdID
-    LEFT JOIN PARCEL p ON p.Pcl_ID = o.Ord_PclID
-    LEFT JOIN RECIPIENT rcpt ON rcpt.Rcpt_ID = p.Pcl_RcptID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    WHERE r.Rdr_Status = 'Active'
-    ORDER BY r.Rdr_Name ASC
-");
-
-if (!$res) {
-    echo json_encode([]);
-    exit;
-}
-
 $riders = [];
-while ($row = $res->fetch_assoc()) {
-    $age    = $row['age_min'] !== null ? (int)$row['age_min'] : 999;
-    
-    // online = pinged within last 5 min, idle = within 30 min, offline = older (or no GPS)
-    if($row['has_gps']) {
-        $status = $age < 5 ? 'online' : ($age < 30 ? 'idle' : 'offline');
-    } else {
-        $status = 'offline';
+
+try {
+    $usersSnap = $db->getReference('users')->orderByChild('Usr_Type')->equalTo('rider')->getSnapshot();
+    $hubsSnap = $db->getReference('hubs')->getSnapshot();
+    $ordersSnap = $db->getReference('orders')->getSnapshot();
+
+    $hubs = $hubsSnap->getValue() ?: [];
+    $orders = $ordersSnap->getValue() ?: [];
+
+    if ($usersSnap->hasChildren()) {
+        foreach ($usersSnap->getValue() as $uid => $u) {
+            if (($u['Usr_Status'] ?? '') !== 'Active') continue;
+
+            $hubId = $u['hub_id'] ?? $u['Rdr_HubID'] ?? '';
+            $hub = $hubs[$hubId] ?? [];
+            $gps = $u['gps'] ?? null;
+
+            $hasGps = false;
+            $lat = $hub['Hub_Lat'] ?? null;
+            $lng = $hub['Hub_Lng'] ?? null;
+            $updatedAt = 'No data';
+            $ageMin = 999;
+
+            if ($gps) {
+                $hasGps = true;
+                $lat = $gps['lat'] ?? $lat;
+                $lng = $gps['lng'] ?? $lng;
+                $updatedAt = date('M j, g:i A', strtotime($gps['updated_at']));
+                $ageMin = floor((time() - strtotime($gps['updated_at'])) / 60);
+            }
+
+            $status = 'offline';
+            if ($hasGps) {
+                $status = $ageMin < 5 ? 'online' : ($ageMin < 30 ? 'idle' : 'offline');
+            }
+
+            // Find active parcels for this rider
+            $activeCount = 0;
+            $sampleOrder = null;
+
+            foreach ($orders as $oid => $o) {
+                $ordStatus = $o['Ord_Status'] ?? '';
+                $transitStatuses = ['Pickup / Drop-off','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'];
+                
+                if (in_array($ordStatus, $transitStatuses) && isset($o['delivery_attempts'])) {
+                    foreach ($o['delivery_attempts'] as $att) {
+                        if (($att['Atmp_RdrID'] ?? '') === $uid && ($att['Atmp_Rslt'] ?? '') === 'Pending') {
+                            $activeCount++;
+                            if (!$sampleOrder) {
+                                $sampleOrder = [
+                                    'id' => $o['awb']['AWB_TrkNum'] ?? $oid,
+                                    'dest' => $o['recipient']['Rcpt_Area'] ?? 'Unknown Area',
+                                    'status' => $ordStatus === 'Pickup / Drop-off' ? 'Picking up parcel' : $ordStatus
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+
+            $riders[] = [
+                'id'             => $uid,
+                'name'           => $u['Usr_Name'] ?? 'Rider',
+                'vehicle'        => $u['Rdr_VhcTyp'] ?? 'Unknown',
+                'hub'            => $hub['Hub_Name'] ?? '—',
+                'hub_id'         => $hubId,
+                'lat'            => $lat !== null ? (float)$lat : null,
+                'lng'            => $lng !== null ? (float)$lng : null,
+                'has_gps'        => $hasGps,
+                'updated_at'     => $updatedAt,
+                'status'         => $status,
+                'active_parcels' => $activeCount,
+                'rcpt_area'      => $sampleOrder['recipient']['Rcpt_Area'] ?? null,
+                'delivery_status'=> $sampleOrder['Ord_Status'] ?? null,
+                'tracking_num'   => $sampleOrder['awb']['AWB_TrkNum'] ?? ($sampleOrder['Ord_ID'] ?? null)
+            ];
+        }
     }
 
-    $riders[] = [
-        'id'             => $row['Rdr_ID'],
-        'name'           => $row['Rdr_Name'],
-        'vehicle'        => $row['Rdr_VhcTyp'],
-        'hub'            => $row['Hub_Name'] ?? '—',
-        'hub_id'         => $row['Hub_ID'],
-        'lat'            => $row['lat'] !== null ? (float)$row['lat'] : null,
-        'lng'            => $row['lng'] !== null ? (float)$row['lng'] : null,
-        'has_gps'        => (bool)$row['has_gps'],
-        'updated_at'     => $row['updated_at'] ?? 'No data',
-        'status'         => $status,
-        'active_parcels' => (int)$row['active_parcels'],
-        'rcpt_area'      => $row['rcpt_area'],
-        'delivery_status'=> $row['delivery_status'],
-        'tracking_num'   => $row['tracking_num']
-    ];
+    // Sort by name
+    usort($riders, function($a, $b) {
+        return strcmp($a['name'], $b['name']);
+    });
+
+} catch (Exception $e) {
+    // silently fail and return empty list
 }
 
 echo json_encode($riders);

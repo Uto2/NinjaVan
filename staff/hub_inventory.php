@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once "../config/db.php";
+require_once "../config/Helper.php";
 
 if(!isset($_SESSION['account_id']) || $_SESSION['role'] !== 'staff'){
     header("Location: /ninjavan/auth/login.php"); exit();
@@ -10,13 +11,14 @@ $title      = "Hub Inventory";
 $activePage = "inventory";
 $hubId      = $_SESSION['hub_id'];
 
-$hub = $conn->query("SELECT * FROM HUB WHERE Hub_ID='$hubId'")->fetch_assoc();
-$hubArea = $conn->real_escape_string($hub['Hub_Area'] ?? '');
+$hubSnap = $db->getReference('hubs/' . $hubId)->getSnapshot();
+$hub = $hubSnap->getValue() ?? ['Hub_Name' => 'Unknown Hub', 'Hub_Area' => ''];
+$hubArea = $hub['Hub_Area'] ?? '';
 
 // Handle Actions
 if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['ord_id'])) {
     $action = $_POST['action'];
-    $ordId = $conn->real_escape_string($_POST['ord_id']);
+    $ordId = trim($_POST['ord_id']);
     
     $newStatus = '';
     if($action === 'to_main') $newStatus = 'Main Sorting Hub';
@@ -24,8 +26,20 @@ if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['ord_
     elseif($action === 'to_destination') $newStatus = 'Destination Hub';
     
     if($newStatus) {
-        $conn->query("UPDATE `ORDER` SET Ord_Status='$newStatus' WHERE Ord_ID='$ordId'");
-        $conn->query("UPDATE SHIPMENT SET Shpm_Status='$newStatus' WHERE Shpm_OrdID='$ordId'");
+        $orderSnap = $db->getReference('orders/' . $ordId)->getSnapshot();
+        if ($orderSnap->exists()) {
+            $orderData = $orderSnap->getValue();
+            $status = $orderData['Ord_Status'] ?? '';
+            $rcptArea = $orderData['recipient']['Rcpt_Area'] ?? '';
+            $pickAddr = $orderData['Ord_PickAddr'] ?? '';
+            
+            if (Helper::isAreaMatch($hubArea, $rcptArea, $pickAddr, $status)) {
+                $db->getReference('orders/' . $ordId . '/Ord_Status')->set($newStatus);
+                $_SESSION['toast_success'] = "Order forwarded to " . $newStatus;
+            } else {
+                $_SESSION['toast_error'] = "Unauthorized: Parcel not in your jurisdiction.";
+            }
+        }
     }
     header("Location: hub_inventory.php"); exit();
 }
@@ -33,39 +47,55 @@ if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['ord_
 // Filter
 $filter = $_GET['filter'] ?? 'all';
 
-// Get parcels at this hub - shipments currently at hub that aren't delivered/RTS
-$where = "WHERE 1=1";
-if($filter === 'staging') $where .= " AND o.Ord_Status = 'Order Created'";
-elseif($filter === 'pending') $where .= " AND o.Ord_Status = 'Pickup / Drop-off'";
-elseif($filter === 'transit') $where .= " AND o.Ord_Status IN ('Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')";
+// Get users for Shipper Names
+$usersSnap = $db->getReference('users')->getSnapshot();
+$usersData = $usersSnap->getValue() ?? [];
 
-// Hub inventory includes orders in the hub area
-$inventory = $conn->query("
-    SELECT o.*, p.Pcl_Wght, p.Pcl_IsCOD, p.Pcl_CODAmt,
-           r.Rcpt_Name, r.Rcpt_Area,
-           sv.Svc_Name, aw.AWB_TrkNum,
-           u.Usr_Name as ShipperName,
-           shpm.Shpm_ID, shpm.Shpm_Status,
-           rd.Rdr_Name as RiderName
-    FROM `ORDER` o
-    JOIN PARCEL p ON o.Ord_PclID = p.Pcl_ID
-    JOIN SHIPPER sh ON o.Ord_ShprID = sh.Shpr_ID
-    JOIN USER_ACCOUNT u ON sh.Shpr_UsrID = u.Usr_ID
-    JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
-    JOIN SERVICE_TYPE sv ON o.Ord_SvcID = sv.Svc_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    LEFT JOIN SHIPMENT shpm ON shpm.Shpm_OrdID = o.Ord_ID AND shpm.Shpm_HubID = '$hubId'
-    LEFT JOIN DELIVERY_ATTEMPT da ON da.Atmp_ShpmID = shpm.Shpm_ID AND da.Atmp_Rslt = 'Pending'
-    LEFT JOIN RIDER rd ON da.Atmp_RdrID = rd.Rdr_ID
-    $where
-    AND o.Ord_Status NOT IN ('Delivered','RTS')
-    ORDER BY o.Ord_CrtdDt DESC
-");
+$inventory = [];
+$cStaging = 0;
+$cPending = 0;
+$cTransit = 0;
 
-// Stats
-$cStaging = $conn->query("SELECT COUNT(*) c FROM `ORDER` o WHERE o.Ord_Status='Order Created'")->fetch_assoc()['c'];
-$cPending = $conn->query("SELECT COUNT(*) c FROM `ORDER` o WHERE o.Ord_Status='Pickup / Drop-off'")->fetch_assoc()['c'];
-$cTransit = $conn->query("SELECT COUNT(*) c FROM SHIPMENT WHERE Shpm_HubID='$hubId' AND Shpm_Status IN ('Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')")->fetch_assoc()['c'];
+$ordersSnap = $db->getReference('orders')->getSnapshot();
+if ($ordersSnap->hasChildren()) {
+    $allOrders = $ordersSnap->getValue();
+    
+    uasort($allOrders, function($a, $b) {
+        return strtotime($b['Ord_CrtdDt'] ?? 0) <=> strtotime($a['Ord_CrtdDt'] ?? 0);
+    });
+
+    foreach ($allOrders as $o) {
+        $status = $o['Ord_Status'] ?? '';
+        if (in_array($status, ['Delivered', 'RTS'])) continue;
+        
+        $rcptArea = $o['recipient']['Rcpt_Area'] ?? '';
+        $pickAddr = $o['Ord_PickAddr'] ?? '';
+        
+        $isMyArea = Helper::isAreaMatch($hubArea, $rcptArea, $pickAddr, $status);
+        if (!$isMyArea) continue;
+
+        // Stats
+        if ($status === 'Order Created') $cStaging++;
+        if ($status === 'Pickup / Drop-off') $cPending++;
+        if (in_array($status, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'])) $cTransit++;
+        
+        // Filter
+        $match = true;
+        if ($filter === 'staging' && $status !== 'Order Created') $match = false;
+        if ($filter === 'pending' && $status !== 'Pickup / Drop-off') $match = false;
+        if ($filter === 'transit' && !in_array($status, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'])) $match = false;
+        
+        if ($match) {
+            // Find ShipperName and RiderName
+            $shprId = $o['Ord_ShprID'] ?? '';
+            $rdrId = $o['Rider_ID'] ?? '';
+            $o['ShipperName'] = $usersData[$shprId]['Usr_Name'] ?? 'Unknown Shipper';
+            $o['RiderName'] = $usersData[$rdrId]['Usr_Name'] ?? '';
+            
+            $inventory[] = $o;
+        }
+    }
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -101,10 +131,10 @@ include "../layout/dashboard_layout.php";
     <table class="nv-table">
         <thead><tr><th>Tracking</th><th>Shipper</th><th>Recipient</th><th>Area</th><th>Weight</th><th>Service</th><th>Rider</th><th>Status</th><th>Action</th></tr></thead>
         <tbody>
-        <?php if($inventory->num_rows === 0): ?>
+        <?php if(empty($inventory)): ?>
             <tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-box-seam"></i></div><h4>No parcels in inventory</h4><p>All parcels have been dispatched or delivered</p></div></td></tr>
-        <?php else: while($r = $inventory->fetch_assoc()):
-            $s=$r['Ord_Status']; 
+        <?php else: foreach($inventory as $r):
+            $s=$r['Ord_Status'] ?? ''; 
             $map=[
                 'Order Created'=>'badge-pending',
                 'Pickup / Drop-off'=>'badge-confirmed',
@@ -117,13 +147,13 @@ include "../layout/dashboard_layout.php";
             $cls=$map[$s]??'badge-pending';
         ?>
             <tr>
-                <td><div style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['AWB_TrkNum'] ?? $r['Ord_ID']) ?></div></td>
+                <td><div style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['awb']['AWB_TrkNum'] ?? $r['Ord_ID']) ?></div></td>
                 <td style="font-size:13px;"><?= htmlspecialchars($r['ShipperName']) ?></td>
-                <td style="font-weight:500;"><?= htmlspecialchars($r['Rcpt_Name']) ?></td>
-                <td style="font-size:12px;color:var(--muted);"><?= htmlspecialchars($r['Rcpt_Area']??'—') ?></td>
-                <td style="font-size:13px;"><?= $r['Pcl_Wght'] ?> kg</td>
-                <td style="font-size:13px;"><?= htmlspecialchars($r['Svc_Name']) ?></td>
-                <td style="font-size:13px;"><?= $r['RiderName'] ? htmlspecialchars($r['RiderName']) : '<span style="color:var(--muted);">—</span>' ?></td>
+                <td style="font-weight:500;"><?= htmlspecialchars($r['recipient']['Rcpt_Name'] ?? '') ?></td>
+                <td style="font-size:12px;color:var(--muted);"><?= htmlspecialchars($r['recipient']['Rcpt_Area']??'—') ?></td>
+                <td style="font-size:13px;"><?= $r['parcel']['Pcl_Wght'] ?? 0 ?> kg</td>
+                <td style="font-size:13px;"><?= htmlspecialchars($r['service']['Svc_Name'] ?? '') ?></td>
+                <td style="font-size:13px;"><?= !empty($r['RiderName']) ? htmlspecialchars($r['RiderName']) : '<span style="color:var(--muted);">—</span>' ?></td>
                 <td><span class="badge-status <?= $cls ?>"><?= $s ?></span></td>
                 <td>
                     <?php if($s === 'Origin Sorting Hub'): ?>
@@ -144,14 +174,50 @@ include "../layout/dashboard_layout.php";
                             <input type="hidden" name="ord_id" value="<?= $r['Ord_ID'] ?>">
                             <button type="submit" class="btn btn-sm btn-outline-primary" style="font-size:12px;">To Dest Hub</button>
                         </form>
+                    <?php elseif($s === 'Destination Hub'): ?>
+                        <a href="/ninjavan/staff/dispatch.php" class="btn btn-sm" style="font-size:12px; background:var(--green); color:#fff; border:none; text-decoration:none; padding:4px 10px; border-radius:4px;">Dispatch to Rider</a>
                     <?php else: ?>
                         <span style="color:var(--muted); font-size:12px;">—</span>
                     <?php endif; ?>
                 </td>
             </tr>
-        <?php endwhile; endif; ?>
+        <?php endforeach; endif; ?>
         </tbody>
     </table>
 </div></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+  const app = initializeApp({
+    databaseURL: "https://ninjavanph-3f985-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  });
+  const db = getDatabase(app);
+  let isFirstLoad = true;
+
+  onValue(ref(db, 'orders'), (snapshot) => {
+      if (isFirstLoad) {
+          isFirstLoad = false;
+          return;
+      }
+      
+      // Silently fetch the updated page and replace the DOM elements
+      fetch(window.location.href)
+        .then(res => res.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            
+            // Replace Stats
+            const newStats = doc.querySelector('.row.g-3.mb-4');
+            if (newStats) document.querySelector('.row.g-3.mb-4').innerHTML = newStats.innerHTML;
+            
+            // Replace Table
+            const newTable = doc.querySelector('.nv-table');
+            if (newTable) document.querySelector('.nv-table').innerHTML = newTable.innerHTML;
+        });
+  });
+</script>
 
 <?php include "../layout/dashboard_footer.php"; ?>

@@ -15,260 +15,171 @@ $shipperId  = $_SESSION['shipper_id'];
 
 // ── Resolve tracking number from GET or from shipper's active orders ──────────
 $trk   = isset($_GET['trk']) ? trim($_GET['trk']) : '';
-$order = null;
+$orderInfo = null;
 $rider = null;
 $riderGPS  = null;
 $timeline  = [];
 $hubCoords = null;
+$activeOrders = [];
+$rawOrder = null;
 
-// Branch hub coordinates are now fetched dynamically from the DB query
-
-if ($trk) {
-    // Look up the order — must belong to this shipper
-    $stmt = $conn->prepare("
-        SELECT o.Ord_ID, o.Ord_Status, o.Ord_CrtdDt,
-               p.Pcl_Wght, p.Pcl_IsCOD, p.Pcl_CODAmt,
-               rc.Rcpt_Name, rc.Rcpt_Area, rc.Rcpt_Addr,
-               sv.Svc_Name,
-               aw.AWB_TrkNum,
-               sh.Shpm_ID, sh.Shpm_Status, sh.Shpm_PickDt, sh.Shpm_DlvDt, sh.Shpm_AtmCnt,
-               h.Hub_ID, h.Hub_Area, h.Hub_Name, h.Hub_Lat, h.Hub_Lng
-        FROM AIRWAY_BILL aw
-        JOIN `ORDER` o       ON aw.AWB_OrdID    = o.Ord_ID
-        JOIN SHIPPER s       ON o.Ord_ShprID     = s.Shpr_ID
-        JOIN PARCEL p        ON o.Ord_PclID      = p.Pcl_ID
-        JOIN RECIPIENT rc    ON p.Pcl_RcptID     = rc.Rcpt_ID
-        JOIN SERVICE_TYPE sv ON o.Ord_SvcID      = sv.Svc_ID
-        LEFT JOIN SHIPMENT sh ON sh.Shpm_OrdID   = o.Ord_ID
-        LEFT JOIN HUB h       ON h.Hub_ID         = sh.Shpm_HubID
-        WHERE aw.AWB_TrkNum = ?
-          AND s.Shpr_ID = ?
-        LIMIT 1
-    ");
-    $stmt->bind_param('ss', $trk, $shipperId);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $order  = $result->num_rows > 0 ? $result->fetch_assoc() : null;
-    $stmt->close();
-
-    if ($order && $order['Shpm_ID']) {
-        // Get assigned rider + their current GPS
-        $stmt2 = $conn->prepare("
-            SELECT rd.Rdr_ID, rd.Rdr_Name, rd.Rdr_VhcTyp, rd.Rdr_Phone,
-                   da.Atmp_ID, da.Atmp_Rslt,
-                   g.GPS_Lat, g.GPS_Lng,
-                   TIMESTAMPDIFF(MINUTE, g.GPS_UpdatedAt, NOW()) AS gps_age_min,
-                   DATE_FORMAT(g.GPS_UpdatedAt, '%h:%i %p') AS gps_updated
-            FROM DELIVERY_ATTEMPT da
-            JOIN RIDER rd ON da.Atmp_RdrID = rd.Rdr_ID
-            LEFT JOIN RIDER_GPS g ON g.GPS_RdrID = rd.Rdr_ID
-            WHERE da.Atmp_ShpmID = ?
-              AND da.Atmp_Rslt   = 'Pending'
-            LIMIT 1
-        ");
-        $stmt2->bind_param('s', $order['Shpm_ID']);
-        $stmt2->execute();
-        $r2    = $stmt2->get_result();
-        $rider = $r2->num_rows > 0 ? $r2->fetch_assoc() : null;
-        $stmt2->close();
-
-        if ($rider && $rider['GPS_Lat']) {
-            $riderGPS = [
-                'lat'     => (float)$rider['GPS_Lat'],
-                'lng'     => (float)$rider['GPS_Lng'],
-                'age_min' => (int)$rider['gps_age_min'],
-                'updated' => $rider['gps_updated'],
-                'status'  => (int)$rider['gps_age_min'] < 5 ? 'online'
-                           : ((int)$rider['gps_age_min'] < 30 ? 'idle' : 'offline'),
-            ];
-        }
-
-        // Resolve hub coordinates dynamically from DB
-        $lat = $order['Hub_Lat'] ? (float)$order['Hub_Lat'] : null;
-        $lng = $order['Hub_Lng'] ? (float)$order['Hub_Lng'] : null;
-        
-        if (!$lat || !$lng) {
-            $harea = strtolower($order['Hub_Area'] ?? '');
-            if (str_contains($harea, 'cebu') || str_contains($harea, 'visayas')) { $lat=10.3157; $lng=123.8854; }
-            elseif (str_contains($harea, 'davao') || str_contains($harea, 'mindanao')) { $lat=7.1907; $lng=125.4553; }
-            else { $lat=14.5995; $lng=120.9842; } // Manila default
-        }
-        
-        $hubCoords = [
-            'id'   => $order['Hub_ID'] ?? '',
-            'lat'  => $lat,
-            'lng'  => $lng,
-            'name' => $order['Hub_Name'] ?? 'NinjaVan Hub'
-        ];
-
-        // Build timeline
-        $currStatus = $order['Ord_Status'];
-        $statusOrder = [
-            'Order Created' => 0,
-            'Pickup / Drop-off' => 1,
-            'Origin Sorting Hub' => 2,
-            'Main Sorting Hub' => 3,
-            'Regional Hub' => 4,
-            'Destination Hub' => 5,
-            'Out for Delivery' => 6,
-            'Delivered' => 7,
-            'RTS' => 8
-        ];
-        $currIdx = $statusOrder[$currStatus] ?? 0;
-        $baseDate = strtotime($order['Ord_CrtdDt']);
-
-        // 1. Order Created
-        $timeline[] = [
-            'date'  => date('Y-m-d H:i:s', $baseDate),
-            'title' => 'Order Created',
-            'desc'  => 'Parcel booked and received by NinjaVan.',
-            'icon'  => 'bi-file-earmark-check-fill',
-            'done'  => true,
-            'color' => null,
-        ];
-
-        // 2. Pickup
-        if($currIdx >= 1) {
-            $date = $order['Shpm_PickDt'] ?: date('Y-m-d H:i:s', $baseDate + 3600);
-            $timeline[] = [
-                'date' => $date,
-                'title' => 'Pickup / Drop-off',
-                'desc' => 'Parcel handed over to Ninja Van.',
-                'icon' => 'bi-box-seam-fill',
-                'done' => true,
-                'color' => null,
-            ];
-        }
-
-        // 3. Origin Sorting Hub
-        if($currIdx >= 2) {
-            $timeline[] = [
-                'date' => date('Y-m-d H:i:s', $baseDate + 7200),
-                'title' => 'Origin Sorting Hub',
-                'desc' => 'Parcel received at origin facility, scanned and sorted.',
-                'icon' => 'bi-building',
-                'done' => $currIdx > 2,
-                'color' => null,
-            ];
-        }
-
-        // 4. Main Sorting Hub
-        if($currIdx >= 3) {
-            $timeline[] = [
-                'date' => date('Y-m-d H:i:s', $baseDate + 86400),
-                'title' => 'Main Sorting Hub',
-                'desc' => 'Parcel arrived at the central sorting facility.',
-                'icon' => 'bi-diagram-3',
-                'done' => $currIdx > 3,
-                'color' => null,
-            ];
-        }
-
-        // 5. Regional Hub
-        if($currIdx >= 4) {
-            $timeline[] = [
-                'date' => date('Y-m-d H:i:s', $baseDate + 172800),
-                'title' => 'Regional Hub',
-                'desc' => 'Parcel transported to the regional distribution center.',
-                'icon' => 'bi-geo-alt',
-                'done' => $currIdx > 4,
-                'color' => null,
-            ];
-        }
-
-        // 6. Destination Hub
-        if($currIdx >= 5) {
-            $timeline[] = [
-                'date' => date('Y-m-d H:i:s', $baseDate + 200000),
-                'title' => 'Destination Hub',
-                'desc' => 'Parcel received at the final branch responsible for delivery.',
-                'icon' => 'bi-house-door',
-                'done' => $currIdx > 5,
-                'color' => null,
-            ];
-        }
-
-        // 7. Delivery attempts
-        if($currIdx >= 6) {
-            $aStmt = $conn->prepare("
-                SELECT da.Atmp_Date, da.Atmp_Rslt, da.Atmp_Sign, da.Atmp_FailRsn, rd.Rdr_Name
-                FROM DELIVERY_ATTEMPT da
-                JOIN RIDER rd ON da.Atmp_RdrID = rd.Rdr_ID
-                WHERE da.Atmp_ShpmID = ?
-                ORDER BY da.Atmp_Date ASC
-            ");
-            $aStmt->bind_param('s', $order['Shpm_ID']);
-            $aStmt->execute();
-            $attempts = $aStmt->get_result();
-            $aStmt->close();
-
-            $hasPending = false;
-            while ($att = $attempts->fetch_assoc()) {
-                if ($att['Atmp_Rslt'] === 'Successful') {
-                    $timeline[] = [
-                        'date'  => $att['Atmp_Date'],
-                        'title' => 'Delivered',
-                        'desc'  => 'Received by ' . htmlspecialchars($att['Atmp_Sign'] ?? '—')
-                                 . ' · Rider: ' . htmlspecialchars($att['Rdr_Name']),
-                        'icon'  => 'bi-check-circle-fill',
-                        'done'  => true,
-                        'color' => 'var(--green)',
-                    ];
-                } elseif ($att['Atmp_Rslt'] === 'Failed') {
-                    $timeline[] = [
-                        'date'  => $att['Atmp_Date'],
-                        'title' => 'Delivery attempt failed',
-                        'desc'  => htmlspecialchars($att['Atmp_FailRsn'] ?? 'No reason given')
-                                 . ' · Rider: ' . htmlspecialchars($att['Rdr_Name']),
-                        'icon'  => 'bi-x-circle-fill',
-                        'done'  => true,
-                        'color' => '#dc2626',
-                    ];
-                } elseif($att['Atmp_Rslt'] === 'Pending') {
-                    $hasPending = true;
-                }
+try {
+    $ordersSnap = $db->getReference('orders')->orderByChild('Ord_ShprID')->equalTo($shipperId)->getSnapshot();
+    if ($ordersSnap->hasChildren()) {
+        foreach ($ordersSnap->getValue() as $o) {
+            $status = $o['Ord_Status'] ?? '';
+            $awb = $o['awb']['AWB_TrkNum'] ?? '';
+            
+            // Build active orders array
+            if (in_array($status, ['Pickup / Drop-off','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'])) {
+                $activeOrders[] = [
+                    'AWB_TrkNum' => $awb,
+                    'Ord_Status' => $status,
+                    'Rcpt_Name'  => $o['recipient']['Rcpt_Name'] ?? ''
+                ];
             }
 
-            // Active out-for-delivery step
-            if ($currIdx === 6 || $hasPending) {
-                $timeline[] = [
-                    'date'  => date('Y-m-d H:i:s'),
-                    'title' => 'Out for Delivery',
-                    'desc'  => 'Rider is on the way to your recipient now.',
-                    'icon'  => 'bi-truck',
-                    'done'  => false,
-                    'color' => 'var(--blue)',
+            // Find matching order
+            if ($trk && $awb === $trk) {
+                $rawOrder = $o;
+            }
+        }
+    }
+} catch (Exception $e) {
+    // Silently fail
+}
+
+if ($rawOrder) {
+    $rdrId = $rawOrder['Rider_ID'] ?? null;
+    if (!$rdrId && isset($rawOrder['delivery_attempts'])) {
+        $attempts = $rawOrder['delivery_attempts'];
+        $lastAttempt = end($attempts);
+        if (($lastAttempt['Atmp_Rslt'] ?? '') === 'Pending') {
+            $rdrId = $lastAttempt['Atmp_RdrID'] ?? null;
+        }
+    }
+
+    if ($rdrId) {
+        $rdrSnap = $db->getReference('users/' . $rdrId)->getSnapshot();
+        if ($rdrSnap->exists()) {
+            $u = $rdrSnap->getValue();
+            $rider = [
+                'Rdr_Name'   => $u['Usr_Name'] ?? 'Rider',
+                'Rdr_VhcTyp' => $u['Rdr_VhcTyp'] ?? 'Unknown',
+                'Rdr_Phone'  => $u['Usr_Phone'] ?? null
+            ];
+            $gps = $u['gps'] ?? null;
+            if ($gps) {
+                $ageMin = floor((time() - strtotime($gps['updated_at'])) / 60);
+                $riderGPS = [
+                    'lat'     => (float)$gps['lat'],
+                    'lng'     => (float)$gps['lng'],
+                    'age_min' => $ageMin,
+                    'updated' => date('h:i A', strtotime($gps['updated_at'])),
+                    'status'  => $ageMin < 5 ? 'online' : ($ageMin < 30 ? 'idle' : 'offline')
                 ];
             }
         }
-        
-        if($currIdx === 8) {
-             $timeline[] = [
-                'date' => date('Y-m-d H:i:s'),
-                'title' => 'Return to Sender (RTS)',
-                'desc' => 'Parcel is being returned to the sender.',
-                'icon' => 'bi-arrow-return-left',
-                'done' => true,
-                'color' => 'var(--red)'
+    }
+
+    $hubId = $rawOrder['Hub_ID'] ?? null;
+    
+    // Fallback: If order doesn't have a Hub ID, use the Rider's assigned Hub
+    if (!$hubId && isset($u)) {
+        $hubId = $u['hub_id'] ?? $u['Rdr_HubID'] ?? null;
+    }
+    
+    $hubData = [];
+    if ($hubId) {
+        $hubSnap = $db->getReference('hubs/' . $hubId)->getSnapshot();
+        if ($hubSnap->exists()) $hubData = $hubSnap->getValue();
+    }
+
+    $lat = $hubData['Hub_Lat'] ?? null;
+    $lng = $hubData['Hub_Lng'] ?? null;
+    if (!$lat || !$lng) {
+        $harea = strtolower($hubData['Hub_Area'] ?? '');
+        if (str_contains($harea, 'cebu') || str_contains($harea, 'visayas')) { $lat=10.3157; $lng=123.8854; }
+        elseif (str_contains($harea, 'davao') || str_contains($harea, 'mindanao')) { $lat=7.1907; $lng=125.4553; }
+        else { $lat=14.5995; $lng=120.9842; } // Manila default
+    }
+    
+    $hubCoords = [
+        'id'   => $hubData['Hub_ID'] ?? '',
+        'lat'  => $lat,
+        'lng'  => $lng,
+        'name' => $hubData['Hub_Name'] ?? 'NinjaVan Hub'
+    ];
+
+    $orderInfo = [
+        'Ord_ID' => $rawOrder['Ord_ID'],
+        'Ord_Status' => $rawOrder['Ord_Status'],
+        'AWB_TrkNum' => $rawOrder['awb']['AWB_TrkNum'] ?? '',
+        'Rcpt_Name' => $rawOrder['recipient']['Rcpt_Name'] ?? '',
+        'Rcpt_Area' => $rawOrder['recipient']['Rcpt_Area'] ?? '',
+        'Rcpt_Addr' => $rawOrder['recipient']['Rcpt_Addr'] ?? '',
+        'Svc_Name' => $rawOrder['service']['Svc_Name'] ?? '',
+        'Pcl_Wght' => $rawOrder['parcel']['Pcl_Wght'] ?? '',
+        'Hub_Name' => $hubData['Hub_Name'] ?? '',
+        'Hub_Area' => $hubData['Hub_Area'] ?? '',
+        'Shpm_AtmCnt' => count($rawOrder['delivery_attempts'] ?? [])
+    ];
+
+    // Timeline based on tracking array
+    if (isset($rawOrder['tracking'])) {
+        foreach ($rawOrder['tracking'] as $t) {
+            $timeline[] = [
+                'date'  => $t['Trk_Date'],
+                'title' => $t['Trk_Status'],
+                'desc'  => $t['Trk_Desc'],
+                'icon'  => $t['Trk_Status'] === 'Order Created' ? 'bi-file-earmark-check-fill' : 
+                          ($t['Trk_Status'] === 'Pickup / Drop-off' ? 'bi-box-seam-fill' : 
+                          ($t['Trk_Status'] === 'Out for Delivery' ? 'bi-truck' : 'bi-geo-alt')),
+                'done'  => true,
+                'color' => null
             ];
         }
-
-        usort($timeline, fn($a, $b) => strtotime($a['date']) - strtotime($b['date']));
     }
-}
+    
+    if (isset($rawOrder['delivery_attempts'])) {
+        foreach ($rawOrder['delivery_attempts'] as $att) {
+            if ($att['Atmp_Rslt'] === 'Successful') {
+                $timeline[] = [
+                    'date'  => $att['Atmp_Date'],
+                    'title' => 'Delivered',
+                    'desc'  => 'Received by ' . htmlspecialchars($att['Atmp_Sign'] ?? '—')
+                             . ' · Rider: ' . htmlspecialchars($att['Rdr_Name'] ?? 'Rider'),
+                    'icon'  => 'bi-check-circle-fill',
+                    'done'  => true,
+                    'color' => 'var(--green)',
+                ];
+            } elseif ($att['Atmp_Rslt'] === 'Failed') {
+                $timeline[] = [
+                    'date'  => $att['Atmp_Date'],
+                    'title' => 'Delivery attempt failed',
+                    'desc'  => htmlspecialchars($att['Atmp_FailRsn'] ?? 'No reason given')
+                             . ' · Rider: ' . htmlspecialchars($att['Rdr_Name'] ?? 'Rider'),
+                    'icon'  => 'bi-x-circle-fill',
+                    'done'  => true,
+                    'color' => '#dc2626',
+                ];
+            }
+        }
+    }
 
-// ── Shipper's active orders for quick-select ──────────────────────────────────
-$activeOrders = $conn->query("
-    SELECT aw.AWB_TrkNum, o.Ord_Status, rc.Rcpt_Name
-    FROM `ORDER` o
-    JOIN PARCEL p      ON o.Ord_PclID   = p.Pcl_ID
-    JOIN RECIPIENT rc  ON p.Pcl_RcptID  = rc.Rcpt_ID
-    LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
-    WHERE o.Ord_ShprID = '$shipperId'
-      AND o.Ord_Status IN ('Pickup / Drop-off','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')
-    ORDER BY o.Ord_CrtdDt DESC
-    LIMIT 10
-");
+    if ($rawOrder['Ord_Status'] === 'Out for Delivery') {
+        $timeline[] = [
+            'date'  => date('Y-m-d H:i:s'),
+            'title' => 'Out for Delivery',
+            'desc'  => 'Rider is on the way to your recipient now.',
+            'icon'  => 'bi-truck',
+            'done'  => false,
+            'color' => 'var(--blue)',
+        ];
+    }
+    
+    usort($timeline, fn($a, $b) => strtotime($a['date']) - strtotime($b['date']));
+}
 
 // Leaflet injected into <head>
 $extraHead = '
@@ -478,7 +389,7 @@ include "../layout/dashboard_layout.php";
         <h1><i class="bi bi-geo-alt-fill" style="color:var(--red);"></i> Track My Rider</h1>
         <p>See exactly where your rider is during delivery</p>
     </div>
-    <?php if ($order && in_array($order['Ord_Status'], ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'])): ?>
+    <?php if ($orderInfo && in_array($orderInfo['Ord_Status'], ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'])): ?>
     <div class="eta-pill">
         <i class="bi bi-clock"></i>
         <span id="etaLabel">Calculating ETA...</span>
@@ -501,12 +412,12 @@ include "../layout/dashboard_layout.php";
         </button>
     </form>
 
-    <?php if ($activeOrders && $activeOrders->num_rows > 0): ?>
+    <?php if (!empty($activeOrders)): ?>
     <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
         <div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin-bottom:8px;">
             Your active shipments
         </div>
-        <?php while ($ao = $activeOrders->fetch_assoc()):
+        <?php foreach (array_slice($activeOrders, 0, 10) as $ao):
             $isActive = $ao['AWB_TrkNum'] === $trk;
         ?>
         <a href="?trk=<?= urlencode($ao['AWB_TrkNum']) ?>"
@@ -515,7 +426,7 @@ include "../layout/dashboard_layout.php";
             <?= htmlspecialchars($ao['AWB_TrkNum']) ?>
             <span style="font-size:10px; color:var(--muted); font-weight:400;">→ <?= htmlspecialchars($ao['Rcpt_Name']) ?></span>
         </a>
-        <?php endwhile; ?>
+        <?php endforeach; ?>
     </div>
     <?php endif; ?>
 </div>
@@ -533,7 +444,7 @@ include "../layout/dashboard_layout.php";
     </p>
 </div>
 
-<?php elseif (!$order): ?>
+<?php elseif (!$orderInfo): ?>
 <!-- ── Not found ─────────────────────────────────────── -->
 <div class="state-card" style="max-width:480px; margin:0 auto;">
     <div class="state-icon" style="background:rgba(239,68,68,0.08); color:#dc2626;">
@@ -548,16 +459,9 @@ include "../layout/dashboard_layout.php";
 </div>
 
 <?php else:
-    $s      = $order['Ord_Status'];
-    $badgeMap = [
-        'Order Created'          => 'badge-pending',
-        'Pickup / Drop-off'   => 'badge-confirmed',
-        'Origin Sorting Hub' => 'badge-transit','Main Sorting Hub' => 'badge-transit','Regional Hub' => 'badge-transit','Destination Hub' => 'badge-transit',
-        'Out for Delivery' => 'badge-delivery',
-        'Delivered'        => 'badge-delivered',
-        'RTS'              => 'badge-failed',
-    ];
-    $badgeCls = $badgeMap[$s] ?? 'badge-pending';
+    require_once "../config/Helper.php";
+    $s      = $orderInfo['Ord_Status'];
+    $badgeCls = Helper::getBadgeClass($s);
     $isLive   = in_array($s, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery']);
     $isOFD    = $s === 'Out for Delivery';
 ?>
@@ -571,28 +475,28 @@ include "../layout/dashboard_layout.php";
         <!-- Order summary -->
         <div class="order-summary-card">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                <div class="order-trk"><?= htmlspecialchars($order['AWB_TrkNum']) ?></div>
+                <div class="order-trk"><?= htmlspecialchars($orderInfo['AWB_TrkNum']) ?></div>
                 <span class="badge-status <?= $badgeCls ?>"><?= $s ?></span>
             </div>
             <div class="order-meta-grid">
                 <div class="order-meta-block">
                     <div class="lbl">Recipient</div>
-                    <div class="val"><?= htmlspecialchars($order['Rcpt_Name']) ?></div>
-                    <div class="sub"><?= htmlspecialchars($order['Rcpt_Area']) ?></div>
+                    <div class="val"><?= htmlspecialchars($orderInfo['Rcpt_Name']) ?></div>
+                    <div class="sub"><?= htmlspecialchars($orderInfo['Rcpt_Area']) ?></div>
                 </div>
                 <div class="order-meta-block">
                     <div class="lbl">Service</div>
-                    <div class="val"><?= htmlspecialchars($order['Svc_Name']) ?></div>
-                    <div class="sub"><?= $order['Pcl_Wght'] ?> kg</div>
+                    <div class="val"><?= htmlspecialchars($orderInfo['Svc_Name']) ?></div>
+                    <div class="sub"><?= $orderInfo['Pcl_Wght'] ?> kg</div>
                 </div>
                 <div class="order-meta-block">
                     <div class="lbl">Hub</div>
-                    <div class="val"><?= htmlspecialchars($order['Hub_Name'] ?? '—') ?></div>
-                    <div class="sub"><?= htmlspecialchars($order['Hub_Area'] ?? '') ?> Branch</div>
+                    <div class="val"><?= htmlspecialchars($orderInfo['Hub_Name'] ?? '—') ?></div>
+                    <div class="sub"><?= htmlspecialchars($orderInfo['Hub_Area'] ?? '') ?> Branch</div>
                 </div>
                 <div class="order-meta-block">
                     <div class="lbl">Attempt</div>
-                    <div class="val"><?= ($order['Shpm_AtmCnt'] ?? 0) + 1 ?> of 3</div>
+                    <div class="val"><?= ($orderInfo['Shpm_AtmCnt'] ?? 0) + 1 ?> of 3</div>
                     <div class="sub">Max 3 tries</div>
                 </div>
             </div>
@@ -651,7 +555,7 @@ include "../layout/dashboard_layout.php";
                     <i class="bi bi-geo-alt"></i>
                     <span>Delivering to</span>
                     <span class="rider-meta-val" style="font-size:11px; max-width:140px; text-align:right; white-space:normal;">
-                        <?= htmlspecialchars($order['Rcpt_Area']) ?>
+                        <?= htmlspecialchars($orderInfo['Rcpt_Area']) ?>
                     </span>
                 </div>
             </div>
@@ -763,14 +667,14 @@ include "../layout/dashboard_layout.php";
 document.addEventListener('DOMContentLoaded', function () {
 
 // PHP → JS data bridge
-const ORDER_STATUS  = <?= json_encode($order['Ord_Status'] ?? '') ?>;
+const ORDER_STATUS  = <?= json_encode($orderInfo['Ord_Status'] ?? '') ?>;
 const IS_LIVE       = <?= json_encode($isLive ?? false) ?>;
 const IS_OFD        = <?= json_encode($isOFD  ?? false) ?>;
 const RIDER_GPS     = <?= json_encode($riderGPS) ?>;
 const HUB           = <?= json_encode($hubCoords ?? ['lat' => 14.5995, 'lng' => 120.9842, 'name' => 'Manila Hub']) ?>;
 const RIDER_NAME    = <?= json_encode($rider['Rdr_Name'] ?? '') ?>;
-const RCPT_AREA     = <?= json_encode($order['Rcpt_Area'] ?? '') ?>;
-const RCPT_ADDR     = <?= json_encode($order['Rcpt_Addr'] ?? '') ?>;
+const RCPT_AREA     = <?= json_encode($orderInfo['Rcpt_Area'] ?? '') ?>;
+const RCPT_ADDR     = <?= json_encode($orderInfo['Rcpt_Addr'] ?? '') ?>;
 const TRK           = <?= json_encode($trk) ?>;
 
 const mapEl = document.getElementById('riderMap');

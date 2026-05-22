@@ -17,30 +17,68 @@ if(isset($_POST['toggle_status'])){
     if(!in_array($newSt, ['Active','Suspended'])) {
         header("Location: manage_shippers.php"); exit();
     }
-    $stmt = $conn->prepare("UPDATE USER_ACCOUNT SET Usr_Status = ? WHERE Usr_ID = ?");
-    $stmt->bind_param('ss', $newSt, $usrId);
-    $stmt->execute();
-    $stmt->close();
-    $_SESSION['toast_success'] = "Shipper status updated!";
+    try {
+        $db->getReference('users/' . $usrId)->update(['Usr_Status' => $newSt]);
+        if ($newSt === 'Suspended') {
+            $auth->disableUser($usrId);
+        } else {
+            $auth->enableUser($usrId);
+        }
+        $_SESSION['toast_success'] = "Shipper status updated!";
+    } catch (Exception $e) {
+        $_SESSION['toast_error'] = "Failed to update status.";
+    }
     header("Location: manage_shippers.php"); exit();
 }
 
-$search = $conn->real_escape_string($_GET['q'] ?? '');
-$where = "WHERE u.Usr_Type='shipper'";
-if($search) $where .= " AND (u.Usr_Name LIKE '%$search%' OR u.Usr_Email LIKE '%$search%')";
+$search = trim(strtolower($_GET['q'] ?? ''));
 
-$shippers = $conn->query("
-    SELECT u.*, sh.Shpr_ID, sh.Shpr_BizName, sh.Shpr_PickAddr,
-           (SELECT COUNT(*) FROM `ORDER` o WHERE o.Ord_ShprID=sh.Shpr_ID) as total_orders,
-           (SELECT COUNT(*) FROM `ORDER` o WHERE o.Ord_ShprID=sh.Shpr_ID AND o.Ord_Status='Delivered') as delivered
-    FROM USER_ACCOUNT u
-    LEFT JOIN SHIPPER sh ON sh.Shpr_UsrID = u.Usr_ID
-    $where
-    ORDER BY u.Usr_DateReg DESC
-");
+$shipperOrders = [];
+$ordersSnap = $db->getReference('orders')->getSnapshot();
+if ($ordersSnap->hasChildren()) {
+    foreach ($ordersSnap->getValue() as $o) {
+        $shid = $o['Ord_ShprID'] ?? '';
+        if ($shid) {
+            if (!isset($shipperOrders[$shid])) {
+                $shipperOrders[$shid] = ['total' => 0, 'delivered' => 0];
+            }
+            $shipperOrders[$shid]['total']++;
+            if (($o['Ord_Status'] ?? '') === 'Delivered') {
+                $shipperOrders[$shid]['delivered']++;
+            }
+        }
+    }
+}
 
-$totalS = $conn->query("SELECT COUNT(*) c FROM USER_ACCOUNT WHERE Usr_Type='shipper'")->fetch_assoc()['c'];
-$activeS = $conn->query("SELECT COUNT(*) c FROM USER_ACCOUNT WHERE Usr_Type='shipper' AND Usr_Status='Active'")->fetch_assoc()['c'];
+$shippersList = [];
+$totalS = 0;
+$activeS = 0;
+
+$usersSnap = $db->getReference('users')->getSnapshot();
+if ($usersSnap->hasChildren()) {
+    foreach ($usersSnap->getValue() as $u) {
+        if (($u['Usr_Type'] ?? '') === 'shipper') {
+            $totalS++;
+            if (($u['Usr_Status'] ?? 'Active') === 'Active') $activeS++;
+            
+            if ($search) {
+                $match = str_contains(strtolower($u['Usr_Name'] ?? ''), $search) ||
+                         str_contains(strtolower($u['Usr_Email'] ?? ''), $search);
+                if (!$match) continue;
+            }
+            
+            $uid = $u['Usr_ID'] ?? '';
+            $u['total_orders'] = $shipperOrders[$uid]['total'] ?? 0;
+            $u['delivered'] = $shipperOrders[$uid]['delivered'] ?? 0;
+            
+            $shippersList[] = $u;
+        }
+    }
+    
+    usort($shippersList, function($a, $b) {
+        return strtotime($b['Usr_DateReg'] ?? 0) <=> strtotime($a['Usr_DateReg'] ?? 0);
+    });
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -74,28 +112,28 @@ include "../layout/dashboard_layout.php";
     <table class="nv-table">
         <thead><tr><th>Shipper</th><th>Business</th><th>Pickup Address</th><th>Orders</th><th>Delivered</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
-        <?php if($shippers->num_rows === 0): ?>
+        <?php if(empty($shippersList)): ?>
             <tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-people"></i></div><h4>No shippers found</h4></div></td></tr>
-        <?php else: while($r = $shippers->fetch_assoc()): ?>
+        <?php else: foreach($shippersList as $r): ?>
             <tr>
-                <td><div style="font-weight:600;font-size:13px;"><?= htmlspecialchars($r['Usr_Name']) ?></div><div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($r['Usr_Email']) ?></div></td>
+                <td><div style="font-weight:600;font-size:13px;"><?= htmlspecialchars($r['Usr_Name']??'') ?></div><div style="font-size:11px;color:var(--muted);"><?= htmlspecialchars($r['Usr_Email']??'') ?></div></td>
                 <td style="font-size:13px;"><?= htmlspecialchars($r['Shpr_BizName']??'—') ?></td>
                 <td style="font-size:12px;color:var(--muted);max-width:200px;white-space:normal;"><?= htmlspecialchars($r['Shpr_PickAddr']??'—') ?></td>
                 <td style="font-weight:700;"><?= $r['total_orders'] ?></td>
                 <td style="font-weight:700;color:var(--green);"><?= $r['delivered'] ?></td>
-                <td><span class="badge-status <?= $r['Usr_Status']==='Active'?'badge-active':'badge-failed' ?>"><?= $r['Usr_Status'] ?></span></td>
+                <td><span class="badge-status <?= ($r['Usr_Status']??'')==='Active'?'badge-active':'badge-failed' ?>"><?= $r['Usr_Status']??'' ?></span></td>
                 <td>
                     <form method="POST" style="display:inline;">
                         <?= csrf_field() ?>
                         <input type="hidden" name="usr_id" value="<?= $r['Usr_ID'] ?>">
-                        <input type="hidden" name="new_status" value="<?= $r['Usr_Status']==='Active'?'Suspended':'Active' ?>">
-                        <button type="submit" name="toggle_status" class="btn-icon <?= $r['Usr_Status']==='Active'?'danger':'' ?>" title="<?= $r['Usr_Status']==='Active'?'Suspend':'Activate' ?>">
-                            <i class="bi bi-<?= $r['Usr_Status']==='Active'?'pause-fill':'play-fill' ?>"></i>
+                        <input type="hidden" name="new_status" value="<?= ($r['Usr_Status']??'')==='Active'?'Suspended':'Active' ?>">
+                        <button type="submit" name="toggle_status" class="btn-icon <?= ($r['Usr_Status']??'')==='Active'?'danger':'' ?>" title="<?= ($r['Usr_Status']??'')==='Active'?'Suspend':'Activate' ?>">
+                            <i class="bi bi-<?= ($r['Usr_Status']??'')==='Active'?'pause-fill':'play-fill' ?>"></i>
                         </button>
                     </form>
                 </td>
             </tr>
-        <?php endwhile; endif; ?>
+        <?php endforeach; endif; ?>
         </tbody>
     </table>
 </div></div>
