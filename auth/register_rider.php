@@ -122,27 +122,31 @@ if(isset($_POST['register_rider'])){
         <div class="row-fields">
             <div class="nv-field-group">
                 <label>First Name *</label>
-                <input type="text" name="first_name" class="nv-field"
+                <input type="text" name="first_name" id="firstNameInput" class="nv-field"
                        value="<?= htmlspecialchars($_POST['first_name'] ?? '') ?>" required>
             </div>
             <div class="nv-field-group">
                 <label>Last Name *</label>
-                <input type="text" name="last_name" class="nv-field"
+                <input type="text" name="last_name" id="lastNameInput" class="nv-field"
                        value="<?= htmlspecialchars($_POST['last_name'] ?? '') ?>" required>
             </div>
         </div>
 
         <div class="nv-field-group">
             <label>Email Address *</label>
-            <input type="email" name="email" class="nv-field"
+            <input type="email" name="email" id="emailInput" class="nv-field"
                    value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" required>
+            <div id="emailError" style="color:var(--nv-red); font-size:12px; margin-top:4px; display:none;">Email is already taken</div>
         </div>
 
         <div class="row-fields">
             <div class="nv-field-group">
                 <label>Phone Number *</label>
-                <input type="tel" name="phone" class="nv-field" placeholder="09xxxxxxxxx"
-                       value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" required>
+                <div class="nv-prefix-wrap" id="phoneWrap" style="display:flex; align-items:center; border-bottom: 2px solid var(--nv-border); transition: border-color 0.2s;">
+                    <span class="nv-field-prefix" style="color: var(--nv-muted); font-size: 15px; font-weight: 600; margin-right: 6px;">+63</span>
+                    <input type="tel" name="phone" id="phoneInput" class="nv-field" placeholder="9XX XXX XXXX"
+                           value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" required maxlength="10" style="border-bottom:none; padding-left:0; flex:1;">
+                </div>
             </div>
 
             <div class="nv-field-group">
@@ -218,6 +222,51 @@ function togglePw(fieldId, iconId){
     f.type  = f.type === 'password' ? 'text' : 'password';
     i.className = f.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
 }
+
+// Name trapping
+function trapName(e) { e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, ''); }
+document.getElementById('firstNameInput').addEventListener('input', trapName);
+document.getElementById('lastNameInput').addEventListener('input', trapName);
+
+// Phone trapping
+const phoneWrap = document.getElementById('phoneWrap');
+const phoneInput = document.getElementById('phoneInput');
+phoneInput.addEventListener('focus', () => phoneWrap.style.borderBottomColor = 'var(--nv-red)');
+phoneInput.addEventListener('blur', () => phoneWrap.style.borderBottomColor = 'var(--nv-border)');
+phoneInput.addEventListener('input', function(e) {
+    e.target.value = e.target.value.replace(/[^0-9]/g, '');
+});
+
+// Email Trapping
+let emailTimeout;
+const emailInput = document.getElementById('emailInput');
+const emailError = document.getElementById('emailError');
+emailInput.addEventListener('input', function(e) {
+    clearTimeout(emailTimeout);
+    emailError.style.display = 'none';
+    emailInput.style.borderColor = 'var(--nv-border)';
+    const email = e.target.value.trim();
+    if (email === '' || !email.includes('@')) return;
+    emailTimeout = setTimeout(async () => {
+        try {
+            const res = await fetch(`/ninjavan/api/check_email.php?email=${encodeURIComponent(email)}`);
+            const data = await res.json();
+            if (data.status === 'taken') {
+                emailError.style.display = 'block';
+                emailInput.style.borderColor = 'var(--nv-red)';
+            }
+        } catch(e) {}
+    }, 500);
+});
+
+// Password match trapping
+const pw1 = document.getElementById('pwField');
+const pw2 = document.getElementById('confirmField');
+pw2.addEventListener('input', () => {
+    if(pw2.value === '') { pw2.style.borderColor = 'var(--nv-border)'; return; }
+    if(pw2.value === pw1.value) { pw2.style.borderColor = '#10b981'; } 
+    else { pw2.style.borderColor = 'var(--nv-red)'; }
+});
 </script>
 
 </body>

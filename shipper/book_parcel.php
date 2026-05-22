@@ -51,7 +51,10 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rcptProv  = $conn->real_escape_string(trim($_POST['rcpt_province']));
     $rcptCity  = $conn->real_escape_string(trim($_POST['rcpt_city']));
     $rcptBrgy  = $conn->real_escape_string(trim($_POST['rcpt_barangay']));
-    $rcptAddr  = $rcptBrgy . ', ' . $rcptCity . ', ' . $rcptProv;
+    $rcptZip   = $conn->real_escape_string(trim($_POST['rcpt_zip'] ?? ''));
+    $rcptStreet = $conn->real_escape_string(trim($_POST['rcpt_street']));
+    
+    $rcptAddr  = $rcptStreet . ', ' . $rcptBrgy . ', ' . $rcptCity . ', ' . $rcptProv . ' ' . $rcptZip;
 
     // Auto-map Province to Area for recipient
     $visayas_provinces = ['Aklan', 'Antique', 'Bohol', 'Capiz', 'Cebu', 'Guimaras', 'Iloilo', 'Leyte', 'Biliran', 'Eastern Samar', 'Northern Samar', 'Samar', 'Southern Leyte', 'Siquijor', 'Negros Oriental', 'Negros Occidental'];
@@ -112,19 +115,25 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pickDtSql = $pickDt ? "'$pickDt'" : "NULL";
             $pickAddrSql = $pickAddr ? "'$pickAddr'" : "NULL";
             $conn->query("INSERT INTO `ORDER` (Ord_ID, Ord_PclID, Ord_SvcID, Ord_ShprID, Ord_Status, Ord_PickPref, Ord_PickDt, Ord_PickAddr, Ord_CrtdDt) 
-                          VALUES ('$ordId', '$pclId', '$svcId', '$shipperId', 'Staging', '$pickPref', $pickDtSql, $pickAddrSql, '$dateNow')");
+                          VALUES ('$ordId', '$pclId', '$svcId', '$shipperId', 'Order Created', '$pickPref', $pickDtSql, $pickAddrSql, '$dateNow')");
 
             // AIRWAY_BILL
             $awbId = generateId($conn, 'AWB', 'AIRWAY_BILL', 'AWB_ID');
-            $trkNum = 'NVPH' . strtoupper(substr(md5(uniqid()), 0, 8)); // Generate tracking number
+            $trkNum = 'NVPH' . strtoupper(bin2hex(random_bytes(4))); // Generate tracking number
             $conn->query("INSERT INTO AIRWAY_BILL (AWB_ID, AWB_OrdID, AWB_TrkNum, AWB_PrtDt, AWB_PrtFmt, AWB_BrCode) 
                           VALUES ('$awbId', '$ordId', '$trkNum', '$dateNow', 'Thermal', '$trkNum')");
 
             // SHIPPING_FEE Calculation
-            $feeBase = $svcData['Svc_BaseRte'];
+            $feeBase = (float)$svcData['Svc_BaseRte'];
+            
+            // Weight calculation: Base rate covers up to 3kg. Excess is 50 PHP per kg.
+            $excessWeight = max(0, $weight - 3);
+            $feeWeight = $excessWeight * 50;
+            $feeBase += $feeWeight; // Add excess weight fee to the base
+
             $feeInsur = 0;
             if($declVal > 5000) {
-                $feeInsur = $declVal * 0.02; // 2% for value above automatic 5000 cover. Simplified rule: 2% of total if they want additional, but documentation says "covers up to 5000, additional is 2% of declared value". Let's apply 2% if > 5000.
+                $feeInsur = $declVal * 0.02; // 2% for value above automatic 5000 cover
             }
             $feeCodHdl = $isCOD === 'Yes' ? ($codAmt * 0.02) : 0; // 2% handling fee
             $feeTotal = $feeBase + $feeInsur + $feeCodHdl;
@@ -173,22 +182,22 @@ include "../layout/dashboard_layout.php";
                 <div class="col-md-6">
                     <div class="nv-form-group">
                         <label>First Name *</label>
-                        <input type="text" name="rcpt_first_name" class="nv-input" required placeholder="e.g. Juan">
+                        <input type="text" name="rcpt_first_name" id="bookFname" class="nv-input" required placeholder="e.g. Juan">
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="nv-form-group">
                         <label>Last Name *</label>
-                        <input type="text" name="rcpt_last_name" class="nv-input" required placeholder="e.g. Dela Cruz">
+                        <input type="text" name="rcpt_last_name" id="bookLname" class="nv-input" required placeholder="e.g. Dela Cruz">
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="nv-form-group">
                         <label>Phone Number *</label>
-                        <input type="text" name="rcpt_phone" class="nv-input" required placeholder="09xxxxxxxxx">
+                        <input type="text" name="rcpt_phone" id="bookPhone" class="nv-input" required placeholder="09xxxxxxxxx" maxlength="11">
                     </div>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-8">
                     <div class="nv-form-group">
                         <label>Province *</label>
                         <select name="rcpt_province" id="rcptProvince" class="nv-input" required>
@@ -202,6 +211,12 @@ include "../layout/dashboard_layout.php";
                         </select>
                     </div>
                 </div>
+                <div class="col-md-4">
+                    <div class="nv-form-group">
+                        <label>ZIP Code</label>
+                        <input type="text" name="rcpt_zip" id="bookZip" class="nv-input" placeholder="e.g. 6000" maxlength="4">
+                    </div>
+                </div>
                 <div class="col-md-6">
                     <div class="nv-form-group">
                         <label>City / Municipality *</label>
@@ -212,10 +227,16 @@ include "../layout/dashboard_layout.php";
                 </div>
                 <div class="col-md-6">
                     <div class="nv-form-group">
-                        <label>Street / Barangay *</label>
+                        <label>Barangay *</label>
                         <select name="rcpt_barangay" id="rcptBarangay" class="nv-input" required>
                             <option value="">Select Barangay</option>
                         </select>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="nv-form-group">
+                        <label>Street / Building / House No. *</label>
+                        <input type="text" name="rcpt_street" class="nv-input" required placeholder="e.g. 123 Main St, Block 4 Lot 5">
                     </div>
                 </div>
             </div>
@@ -391,6 +412,13 @@ document.addEventListener('DOMContentLoaded', function() {
             base = parseFloat(opt.getAttribute('data-base'));
         }
 
+        // Weight penalty (Base rate covers up to 3kg, excess is 50 PHP per kg)
+        const weightInput = document.getElementById('parcelWeight');
+        const w = parseFloat(weightInput.value) || 0;
+        if(w > 3) {
+            base += ((w - 3) * 50);
+        }
+
         // Insurance
         const val = parseFloat(declValInput.value) || 0;
         if(val > 5000) {
@@ -415,6 +443,7 @@ document.addEventListener('DOMContentLoaded', function() {
     declValInput.addEventListener('input', calcFees);
     codAmtInput.addEventListener('input', calcFees);
     codSwitch.addEventListener('change', calcFees);
+    document.getElementById('parcelWeight').addEventListener('input', calcFees);
 
     const phLocations = {
         "Metro Manila": {
@@ -536,6 +565,37 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     setupPhAddressDropdowns('rcptProvince', 'rcptCity', 'rcptBarangay');
+
+    // Add UI Trappings
+    const fName = document.getElementById('bookFname');
+    const lName = document.getElementById('bookLname');
+    const phone = document.getElementById('bookPhone');
+    const weight = document.getElementById('parcelWeight');
+    const val = document.getElementById('parcelVal');
+
+    function trapName(e) { e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, ''); }
+    fName.addEventListener('input', trapName);
+    lName.addEventListener('input', trapName);
+
+    phone.addEventListener('input', function(e) {
+        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+    });
+
+    const zip = document.getElementById('bookZip');
+    if(zip) {
+        zip.addEventListener('input', function(e) {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        });
+    }
+
+    weight.addEventListener('input', function(e) {
+        if(parseFloat(this.value) > 50) this.value = 50;
+        if(parseFloat(this.value) < 0) this.value = 0.1;
+    });
+
+    val.addEventListener('input', function(e) {
+        if(parseFloat(this.value) < 0) this.value = 0;
+    });
 });
 </script>
 

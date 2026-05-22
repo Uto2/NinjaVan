@@ -14,7 +14,7 @@ $totalOrders   = $conn->query("SELECT COUNT(*) c FROM `ORDER`")->fetch_assoc()['
 $totalShippers = $conn->query("SELECT COUNT(*) c FROM SHIPPER")->fetch_assoc()['c'];
 $totalRiders   = $conn->query("SELECT COUNT(*) c FROM RIDER")->fetch_assoc()['c'];
 $delivered     = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Delivered'")->fetch_assoc()['c'];
-$staging       = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Staging'")->fetch_assoc()['c'];
+$staging       = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Order Created'")->fetch_assoc()['c'];
 $revenue       = $conn->query("SELECT IFNULL(SUM(Fee_Total),0) c FROM SHIPPING_FEE f JOIN `ORDER` o ON f.Fee_OrdID=o.Ord_ID WHERE o.Ord_Status='Delivered'")->fetch_assoc()['c'];
 
 // ---- STATUS BREAKDOWN ----
@@ -83,7 +83,7 @@ include "../layout/dashboard_layout.php";
         <div class="stat-card amber">
             <div class="stat-icon amber"><i class="bi bi-exclamation-triangle-fill"></i></div>
             <div class="stat-value"><?= $staging ?></div>
-            <div class="stat-label">Staging Orders</div>
+            <div class="stat-label">Order Created</div>
             <div class="stat-trend <?= $staging > 0 ? 'down' : 'up' ?>">
                 <i class="bi bi-<?= $staging > 0 ? 'exclamation-circle' : 'check-circle' ?>"></i>
                 <?= $staging > 0 ? 'Needs action' : 'All processed' ?>
@@ -102,9 +102,12 @@ include "../layout/dashboard_layout.php";
 
             <?php
             $statusMeta = [
-                'Staging'        => ['badge-pending',   'Staging'],
-                'Pending Pickup' => ['badge-confirmed', 'Pending Pickup'],
-                'In Transit'     => ['badge-transit',   'In Transit'],
+                'Order Created'        => ['badge-pending',   'Order Created'],
+                'Pickup / Drop-off' => ['badge-confirmed', 'Pickup / Drop-off'],
+                'Origin Sorting Hub'     => ['badge-transit',   'Origin Sorting Hub'],
+                'Main Sorting Hub'     => ['badge-transit',   'Main Sorting Hub'],
+                'Regional Hub'     => ['badge-transit',   'Regional Hub'],
+                'Destination Hub'     => ['badge-transit',   'Destination Hub'],
                 'Delivered'      => ['badge-delivered',  'Delivered'],
                 'RTS'            => ['badge-failed',    'RTS'],
             ];
@@ -172,7 +175,7 @@ include "../layout/dashboard_layout.php";
             $qstats = [
                 ['Active Riders',     $totalRiders, 'bi-bicycle',          'var(--blue)'],
                 ['Delivered Orders',  $delivered,   'bi-check-circle-fill','var(--green)'],
-                ['Staging Orders',    $staging,     'bi-hourglass-split',  'var(--amber)'],
+                ['Order Created',    $staging,     'bi-hourglass-split',  'var(--amber)'],
             ];
             foreach($qstats as [$label, $val, $icon, $color]):
             ?>
@@ -233,8 +236,8 @@ include "../layout/dashboard_layout.php";
             <?php else: while($r = $recentOrders->fetch_assoc()):
                 $s   = $r['Ord_Status'];
                 $map = [
-                    'Staging'=>'badge-pending','Pending Pickup'=>'badge-confirmed',
-                    'In Transit'=>'badge-transit','Delivered'=>'badge-delivered',
+                    'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
+                    'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Delivered'=>'badge-delivered',
                     'RTS'=>'badge-failed',
                 ];
                 $cls = $map[$s] ?? 'badge-pending';

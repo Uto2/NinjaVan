@@ -14,7 +14,7 @@ $shipperId  = $_SESSION['shipper_id'] ?? '';
 $totalOrders = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId'")->fetch_assoc()['c'];
 $activeOrders = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status NOT IN ('Delivered','RTS')")->fetch_assoc()['c'];
 $delivered   = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status='Delivered'")->fetch_assoc()['c'];
-$staging     = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status='Staging'")->fetch_assoc()['c'];
+$orderCreated     = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status='Order Created'")->fetch_assoc()['c'];
 
 // ---- RECENT ORDERS ----
 $recent = $conn->query("
@@ -64,8 +64,8 @@ include "../layout/dashboard_layout.php";
     <div class="col-sm-6 col-xl-3">
         <div class="stat-card amber">
             <div class="stat-icon amber"><i class="bi bi-hourglass-split"></i></div>
-            <div class="stat-value"><?= $staging ?></div>
-            <div class="stat-label">Staging</div>
+            <div class="stat-value"><?= $orderCreated ?></div>
+            <div class="stat-label">Order Created</div>
             <div class="stat-trend neu"><i class="bi bi-dash"></i> Awaiting</div>
         </div>
     </div>
@@ -165,8 +165,8 @@ include "../layout/dashboard_layout.php";
                             <td><?php
                                 $s = $r['Ord_Status'];
                                 $map = [
-                                    'Staging'=>'badge-pending','Pending Pickup'=>'badge-confirmed',
-                                    'In Transit'=>'badge-transit','Delivered'=>'badge-delivered',
+                                    'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
+                                    'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Delivered'=>'badge-delivered',
                                     'RTS'=>'badge-failed',
                                 ];
                                 $cls = $map[$s] ?? 'badge-pending';

@@ -70,7 +70,7 @@ include "../layout/dashboard_layout.php";
 </div>
 
 <div style="display:flex;gap:6px;margin-bottom:24px;flex-wrap:wrap;">
-    <?php foreach(['all'=>'All','Staging'=>'Staging','Pending Pickup'=>'Pending Pickup','In Transit'=>'In Transit','Delivered'=>'Delivered','RTS'=>'RTS'] as $k=>$v): ?>
+    <?php foreach(['all'=>'All','Order Created'=>'Order Created','Pickup / Drop-off'=>'Pickup / Drop-off','Origin Sorting Hub'=>'Origin Sorting Hub','Main Sorting Hub'=>'Main Sorting Hub','Regional Hub'=>'Regional Hub','Destination Hub'=>'Destination Hub','Delivered'=>'Delivered','RTS'=>'RTS'] as $k=>$v): ?>
     <a href="?status=<?= urlencode($k) ?>" style="padding:7px 16px;border-radius:50px;font-size:12px;font-weight:600;text-decoration:none;<?= $filterStatus===$k?'background:var(--ink);color:#fff;':'background:var(--surface-2);color:var(--muted);border:1.5px solid var(--border);' ?>"><?= $v ?></a>
     <?php endforeach; ?>
 </div>
@@ -86,7 +86,7 @@ include "../layout/dashboard_layout.php";
             <tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-boxes"></i></div><h4>No parcels found</h4></div></td></tr>
         <?php else: while($r = $parcels->fetch_assoc()):
             $s = $r['Ord_Status'];
-            $map = ['Staging'=>'badge-pending','Pending Pickup'=>'badge-confirmed','In Transit'=>'badge-transit','Out for Delivery'=>'badge-delivery','Delivered'=>'badge-delivered','RTS'=>'badge-failed'];
+            $map = ['Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed','Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Out for Delivery'=>'badge-delivery','Delivered'=>'badge-delivered','RTS'=>'badge-failed'];
             $cls = $map[$s] ?? 'badge-pending';
         ?>
             <tr>
@@ -116,8 +116,8 @@ include "../layout/dashboard_layout.php";
         </div>
         <div class="nv-form-group"><label>New Status *</label>
             <select name="new_status" id="statusSelect" class="nv-input" required>
-                <option value="Staging">Staging</option><option value="Pending Pickup">Pending Pickup</option>
-                <option value="In Transit">In Transit</option><option value="Delivered">Delivered</option>
+                <option value="Order Created">Order Created</option><option value="Pickup / Drop-off">Pickup / Drop-off</option>
+                <option value="Origin Sorting Hub">Origin Sorting Hub</option><option value="Main Sorting Hub">Main Sorting Hub</option><option value="Regional Hub">Regional Hub</option><option value="Destination Hub">Destination Hub</option><option value="Delivered">Delivered</option>
                 <option value="RTS">RTS</option>
             </select>
         </div>

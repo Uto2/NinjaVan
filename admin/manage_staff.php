@@ -11,31 +11,46 @@ $activePage = "staff";
 
 // ---- HANDLE ADD STAFF ----
 if(isset($_POST['add_staff'])){
-    $firstName = $conn->real_escape_string(trim($_POST['first_name']));
-    $lastName  = $conn->real_escape_string(trim($_POST['last_name']));
+    csrf_verify();
+    $firstName = trim($_POST['first_name']);
+    $lastName  = trim($_POST['last_name']);
     $name      = $firstName . ' ' . $lastName;
-    $email     = $conn->real_escape_string(trim($_POST['email']));
-    $phone     = $conn->real_escape_string(trim($_POST['phone']));
-    $hubId     = $conn->real_escape_string($_POST['hub_id']);
-    $role      = $conn->real_escape_string($_POST['staff_role']);
+    $email     = trim($_POST['email']);
+    $phone     = trim($_POST['phone']);
+    $hubId     = trim($_POST['hub_id']);
+    $role      = trim($_POST['staff_role']);
     $pass      = password_hash($_POST['password'], PASSWORD_BCRYPT);
 
-    // Check email uniqueness
-    $chk = $conn->query("SELECT Usr_ID FROM USER_ACCOUNT WHERE Usr_Email='$email'");
-    if($chk && $chk->num_rows > 0){
+    // Check email uniqueness — prepared statement
+    $chk = $conn->prepare("SELECT Usr_ID FROM USER_ACCOUNT WHERE Usr_Email = ?");
+    $chk->bind_param('s', $email);
+    $chk->execute();
+    $chk->store_result();
+    if($chk->num_rows > 0){
+        $chk->close();
         $_SESSION['toast_error'] = "Email already exists.";
         header("Location: manage_staff.php"); exit();
     }
+    $chk->close();
 
-    // Create user account (Usr_Type = 'staff')
+    // Create user account — prepared statement
     $usrId = 'USR-' . strtoupper(substr(uniqid(), -6));
-    $conn->query("INSERT INTO USER_ACCOUNT (Usr_ID, Usr_Name, Usr_Email, Usr_Pass, Usr_Phone, Usr_Type, Usr_Status)
-                  VALUES ('$usrId','$name','$email','$pass','$phone','staff','Active')");
+    $stmtUsr = $conn->prepare(
+        "INSERT INTO USER_ACCOUNT (Usr_ID, Usr_Name, Usr_Email, Usr_Pass, Usr_Phone, Usr_Type, Usr_Status)
+         VALUES (?, ?, ?, ?, ?, 'staff', 'Active')"
+    );
+    $stmtUsr->bind_param('sssss', $usrId, $name, $email, $pass, $phone);
+    $stmtUsr->execute();
+    $stmtUsr->close();
 
-    // Create STAFF record — only columns that exist: Stf_ID, Stf_UsrID, Stf_HubID, Stf_Role
+    // Create STAFF record — prepared statement
     $stfId = 'STF-' . strtoupper(substr(uniqid(), -6));
-    $conn->query("INSERT INTO STAFF (Stf_ID, Stf_UsrID, Stf_HubID, Stf_Role)
-                  VALUES ('$stfId','$usrId','$hubId','$role')");
+    $stmtStf = $conn->prepare(
+        "INSERT INTO STAFF (Stf_ID, Stf_UsrID, Stf_HubID, Stf_Role) VALUES (?, ?, ?, ?)"
+    );
+    $stmtStf->bind_param('ssss', $stfId, $usrId, $hubId, $role);
+    $stmtStf->execute();
+    $stmtStf->close();
 
     $_SESSION['toast_success'] = "Staff member \"$name\" added successfully!";
     header("Location: manage_staff.php"); exit();
@@ -43,19 +58,37 @@ if(isset($_POST['add_staff'])){
 
 // ---- HANDLE TOGGLE STATUS (via USER_ACCOUNT only) ----
 if(isset($_POST['toggle_status'])){
-    $usrId = $conn->real_escape_string($_POST['usr_id']);
-    $newSt = $conn->real_escape_string($_POST['new_status']);
-    $conn->query("UPDATE USER_ACCOUNT SET Usr_Status='$newSt' WHERE Usr_ID='$usrId'");
+    csrf_verify();
+    $usrId = $_POST['usr_id'];
+    $newSt = $_POST['new_status'];
+    // Whitelist the only two valid statuses
+    if(!in_array($newSt, ['Active','Inactive'])) {
+        header("Location: manage_staff.php"); exit();
+    }
+    $stmt = $conn->prepare("UPDATE USER_ACCOUNT SET Usr_Status = ? WHERE Usr_ID = ?");
+    $stmt->bind_param('ss', $newSt, $usrId);
+    $stmt->execute();
+    $stmt->close();
     $_SESSION['toast_success'] = "Staff status updated.";
     header("Location: manage_staff.php"); exit();
 }
 
 // ---- HANDLE DELETE ----
 if(isset($_POST['delete_staff'])){
-    $stfId = $conn->real_escape_string($_POST['stf_id']);
-    $usrId = $conn->real_escape_string($_POST['usr_id']);
-    $conn->query("DELETE FROM STAFF WHERE Stf_ID='$stfId'");
-    $conn->query("DELETE FROM USER_ACCOUNT WHERE Usr_ID='$usrId'");
+    csrf_verify();
+    $stfId = $_POST['stf_id'];
+    $usrId = $_POST['usr_id'];
+
+    $s1 = $conn->prepare("DELETE FROM STAFF WHERE Stf_ID = ?");
+    $s1->bind_param('s', $stfId);
+    $s1->execute();
+    $s1->close();
+
+    $s2 = $conn->prepare("DELETE FROM USER_ACCOUNT WHERE Usr_ID = ?");
+    $s2->bind_param('s', $usrId);
+    $s2->execute();
+    $s2->close();
+
     $_SESSION['toast_success'] = "Staff member removed.";
     header("Location: manage_staff.php"); exit();
 }
@@ -196,6 +229,7 @@ include "../layout/dashboard_layout.php";
                     <div style="display:flex;gap:4px;">
                         <!-- Toggle status -->
                         <form method="POST" style="display:inline;">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="stf_id" value="<?= $r['Stf_ID'] ?>">
                             <input type="hidden" name="usr_id" value="<?= $r['Usr_ID'] ?>">
                             <input type="hidden" name="new_status" value="<?= $r['Usr_Status']==='Active'?'Inactive':'Active' ?>">
@@ -205,6 +239,7 @@ include "../layout/dashboard_layout.php";
                         </form>
                         <!-- Delete -->
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this staff member? This cannot be undone.')">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="stf_id" value="<?= $r['Stf_ID'] ?>">
                             <input type="hidden" name="usr_id" value="<?= $r['Usr_ID'] ?>">
                             <button type="submit" name="delete_staff" class="btn-icon danger" title="Delete">
@@ -235,6 +270,7 @@ include "../layout/dashboard_layout.php";
         </div>
 
         <form method="POST" style="padding:24px;">
+            <?= csrf_field() ?>
             <div class="row g-3">
 
                 <div class="col-md-6">
@@ -261,7 +297,7 @@ include "../layout/dashboard_layout.php";
                 <div class="col-md-6">
                     <div class="nv-form-group">
                         <label>Phone Number</label>
-                        <input type="text" name="phone" class="nv-input" placeholder="09XX XXX XXXX">
+                        <input type="text" name="phone" id="phoneInputStaff" class="nv-input" placeholder="09XX XXX XXXX">
                     </div>
                 </div>
 
@@ -319,6 +355,25 @@ include "../layout/dashboard_layout.php";
 document.getElementById('addStaffModal').addEventListener('click', function(e){
     if(e.target === this) this.style.display = 'none';
 });
+
+// Phone trapping
+const pStaff = document.getElementById('phoneInputStaff');
+if(pStaff) {
+    pStaff.addEventListener('input', function(e) {
+        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+    });
+}
+
+// Password match trapping
+const pw1S = document.getElementById('pwStaff');
+const pw2S = document.getElementById('confirmStaff');
+if(pw1S && pw2S) {
+    pw2S.addEventListener('input', () => {
+        if(pw2S.value === '') { pw2S.style.borderColor = 'var(--nv-border)'; return; }
+        if(pw2S.value === pw1S.value) { pw2S.style.borderColor = '#10b981'; } 
+        else { pw2S.style.borderColor = 'var(--nv-red)'; }
+    });
+}
 </script>
 
 <?php include "../layout/dashboard_footer.php"; ?>

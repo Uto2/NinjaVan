@@ -16,10 +16,10 @@ $hub = ($hubRes && $hubRes->num_rows > 0) ? $hubRes->fetch_assoc() : ['Hub_Name'
 
 // ---- STATS (specific to this Hub) ----
 // Parcels currently at this hub waiting to be assigned/processed
-// Using ORDER status 'Pending Pickup' or SHIPMENT pointing to this hub
+// Using ORDER status 'Pickup / Drop-off' or SHIPMENT pointing to this hub
 $pendingDispatch = $conn->query("
     SELECT COUNT(*) c FROM `ORDER` o 
-    WHERE o.Ord_Status = 'Pending Pickup'
+    WHERE o.Ord_Status = 'Pickup / Drop-off'
 ")->fetch_assoc()['c'];
 
 $activeRiders = $conn->query("
@@ -129,8 +129,8 @@ include "../layout/dashboard_layout.php";
             <?php else: while($r = $recentOrders->fetch_assoc()):
                 $s   = $r['Ord_Status'];
                 $map = [
-                    'Staging'=>'badge-pending','Pending Pickup'=>'badge-confirmed',
-                    'In Transit'=>'badge-transit','Delivered'=>'badge-delivered',
+                    'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
+                    'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Delivered'=>'badge-delivered',
                     'RTS'=>'badge-failed',
                 ];
                 $cls = $map[$s] ?? 'badge-pending';

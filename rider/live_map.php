@@ -5,6 +5,9 @@
  * destination pin, dashed planned route, solid travelled trail.
  */
 session_start();
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
 require_once "../config/db.php";
 
 if (!isset($_SESSION['account_id']) || !in_array($_SESSION['role'], ['rider','staff','admin'])) {
@@ -19,6 +22,44 @@ $extraHead = '
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 ';
+
+// Load dynamic hubs
+$hubsQuery = $conn->query("SELECT Hub_ID, Hub_Name, Hub_Lat, Hub_Lng, Hub_Area FROM HUB");
+$hubsList = [];
+$coordCounts = [];
+
+while($h = $hubsQuery->fetch_assoc()) {
+    // If hub lat/lng is missing, fallback based on area for map display purposes
+    $lat = $h['Hub_Lat'] ? (float)$h['Hub_Lat'] : null;
+    $lng = $h['Hub_Lng'] ? (float)$h['Hub_Lng'] : null;
+    
+    if (!$lat || !$lng) {
+        $area = strtolower($h['Hub_Area'] ?? '');
+        if (str_contains($area, 'cebu') || str_contains($area, 'visayas')) { $lat=10.3157; $lng=123.8854; }
+        elseif (str_contains($area, 'davao') || str_contains($area, 'mindanao')) { $lat=7.1907; $lng=125.4553; }
+        else { $lat=14.5995; $lng=120.9842; } // Default Manila
+    }
+    
+    // Prevent exact overlapping pins by adding a tiny offset if multiple hubs share the exact same coordinates
+    $coordKey = "$lat,$lng";
+    if (!isset($coordCounts[$coordKey])) {
+        $coordCounts[$coordKey] = 0;
+    } else {
+        $coordCounts[$coordKey]++;
+        // Add a ~500m offset in a circle
+        $angle = $coordCounts[$coordKey] * (pi() / 2); // 90 degree offsets
+        $lat += 0.005 * cos($angle);
+        $lng += 0.005 * sin($angle);
+    }
+    
+    $hubsList[] = [
+        'id'   => $h['Hub_ID'],
+        'name' => $h['Hub_Name'],
+        'lat'  => $lat,
+        'lng'  => $lng,
+        'area' => $h['Hub_Area']
+    ];
+}
 
 include "../layout/dashboard_layout.php";
 ?>
@@ -72,7 +113,7 @@ include "../layout/dashboard_layout.php";
 <div class="page-header">
   <div>
     <h1><i class="bi bi-geo-alt-fill" style="color:var(--red);"></i> Live Rider Map</h1>
-    <p>Real-time rider positions + simulated delivery routes — updates every 15 seconds</p>
+    <p>Real-time rider positions + simulated real-road delivery routes — updates every 15 seconds</p>
   </div>
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <?php if ($role === 'rider'): ?>
@@ -106,7 +147,7 @@ include "../layout/dashboard_layout.php";
     </div>
     <div class="legend-item"><div class="legend-dot-sm" style="background:#3b82f6;border-radius:3px;"></div> Destination</div>
   </div>
-  <div class="sim-controls" id="simControls" style="display:none;">
+  <div class="sim-controls" id="simControls" style="display:flex;">
     <span style="font-size:11px;color:var(--muted);font-weight:600;">Simulation:</span>
     <button class="sim-btn active" id="simPlayBtn"  onclick="simPlay()"><i class="bi bi-play-fill"></i> Play</button>
     <button class="sim-btn"        id="simPauseBtn" onclick="simPause()"><i class="bi bi-pause-fill"></i> Pause</button>
@@ -139,11 +180,7 @@ include "../layout/dashboard_layout.php";
 <script>
 document.addEventListener('DOMContentLoaded', function () {
 
-const HUBS = [
-  {key:'Manila',name:'Manila Hub',lat:14.5995,lng:120.9842},
-  {key:'Cebu',  name:'Cebu Hub',  lat:10.3157,lng:123.8854},
-  {key:'Davao', name:'Davao Hub', lat: 7.1907,lng:125.4553},
-];
+const HUBS = <?= json_encode($hubsList) ?>;
 
 const map = L.map('map',{center:[12.0,122.5],zoom:6,zoomControl:true});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
@@ -154,7 +191,7 @@ setTimeout(()=>map.invalidateSize(),250);
 // Hub pins
 const hubSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="15" fill="#e8002d" stroke="white" stroke-width="2.5"/><text x="17" y="22" text-anchor="middle" font-size="14" font-family="sans-serif">&#x1F3ED;</text></svg>`;
 const hubIcon=L.divIcon({html:hubSvg,iconSize:[34,34],iconAnchor:[17,17],className:''});
-HUBS.forEach(h=>{ L.marker([h.lat,h.lng],{icon:hubIcon}).addTo(map).bindPopup(`<div style="padding:4px 2px;min-width:130px;"><div style="font-family:'Sora',sans-serif;font-weight:700;font-size:13px;">&#x1F3ED; ${h.name}</div><div style="font-size:12px;color:#666;">${h.key} Branch</div></div>`); });
+HUBS.forEach(h=>{ L.marker([h.lat,h.lng],{icon:hubIcon}).addTo(map).bindPopup(`<div style="padding:4px 2px;min-width:130px;"><div style="font-family:'Sora',sans-serif;font-weight:700;font-size:13px;">&#x1F3ED; ${h.name}</div><div style="font-size:12px;color:#666;">${h.area} Branch</div></div>`); });
 
 function riderIcon(status){
   const c={online:'#00b37d',idle:'#f59e0b',offline:'#8a8580'}[status]||'#8a8580';
@@ -165,52 +202,39 @@ function destIcon(){
 }
 
 let markers={},routeLines={},travelledLines={},destMarkers={},simStates={};
-let activeCard=null,demoMode=false,demoInterval=null;
-
-const DEMO_RIDERS=[
-  {id:'DEMO1',name:'Carlos Mendoza',vehicle:'Motorcycle',hub:'Manila',lat:14.5547,lng:121.0244,status:'online',active_parcels:3,updated_at:'Just now',rcpt_area:'Metro Manila'},
-  {id:'DEMO2',name:'Ana Reyes',vehicle:'Bicycle',hub:'Manila',lat:14.6042,lng:121.0200,status:'online',active_parcels:1,updated_at:'2m ago',rcpt_area:'Luzon'},
-  {id:'DEMO3',name:'Mark Santos',vehicle:'Van',hub:'Cebu',lat:10.3200,lng:123.8950,status:'idle',active_parcels:2,updated_at:'8m ago',rcpt_area:'Visayas'},
-  {id:'DEMO4',name:'Joy Lim',vehicle:'Motorcycle',hub:'Davao',lat:7.1950,lng:125.4700,status:'idle',active_parcels:0,updated_at:'18m ago',rcpt_area:'Mindanao'},
-];
+let activeCard=null;
 
 async function loadRiders(){
   try{
     const res=await fetch('/ninjavan/api/rider_positions.php?_='+Date.now());
     const data=await res.json();
-    if(!Array.isArray(data)||data.length===0){if(!demoMode)activateDemoMode();return;}
-    demoMode=false;if(demoInterval){clearInterval(demoInterval);demoInterval=null;}hideDemoBanner();
-    await renderRiders(data);updateStats(data);
-  }catch(e){console.warn(e);if(!demoMode)activateDemoMode();}
+    await renderRiders(data);
+    updateStats(data);
+  }catch(e){console.warn(e);}
 }
-
-function activateDemoMode(){
-  demoMode=true;showDemoBanner();
-  renderRiders(DEMO_RIDERS).then(()=>{
-    const d={DEMO1:[0.0003,-0.0002],DEMO2:[-0.0002,0.0003],DEMO3:[0.0001,-0.0003],DEMO4:[0.0002,0.0002]};
-    demoInterval=setInterval(()=>{DEMO_RIDERS.forEach(r=>{r.lat+=d[r.id][0]+(Math.random()-0.5)*0.00008;r.lng+=d[r.id][1]+(Math.random()-0.5)*0.00008;if(markers[r.id])markers[r.id].setLatLng([r.lat,r.lng]);});},2000);
-  });
-  updateStats(DEMO_RIDERS);
-}
-
-function showDemoBanner(){
-  if(document.getElementById('demoBanner'))return;
-  const b=document.createElement('div');b.id='demoBanner';
-  b.style.cssText='background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:16px;display:flex;align-items:center;gap:10px;';
-  b.innerHTML='<i class="bi bi-lightning-charge-fill" style="font-size:18px;"></i><span><strong>Demo Mode</strong> \u2014 No GPS data in RIDER_GPS yet. Routes shown are simulated. Tap <strong>Share my location</strong> to push real data.</span>';
-  document.querySelector('.page-header').after(b);
-}
-function hideDemoBanner(){const b=document.getElementById('demoBanner');if(b)b.remove();}
 
 async function renderRiders(riders){
   const el=document.getElementById('riderListBody');
-  if(!riders||riders.length===0){el.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted);font-size:13px;"><i class="bi bi-geo" style="font-size:26px;display:block;margin-bottom:8px;"></i>No active riders</div>';return;}
+  if(!riders||riders.length===0){
+      el.innerHTML='<div style="padding:30px;text-align:center;color:var(--muted);font-size:13px;"><i class="bi bi-geo" style="font-size:26px;display:block;margin-bottom:8px;"></i>No active riders</div>';
+      return;
+  }
   const cur=riders.map(r=>r.id);
   Object.keys(markers).forEach(id=>{if(!cur.includes(id))cleanupRider(id);});
   let html='';
   riders.forEach(r=>{
     const ini=r.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-    html+=`<div class="rider-card" id="card-${r.id}" onclick="focusRider('${r.id}',${r.lat},${r.lng})">
+    
+    // Delivery status badge
+    let delStatusHtml = '';
+    if (r.delivery_status) {
+        delStatusHtml = `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-soft);padding:2px 7px;border-radius:4px;"><i class="bi bi-broadcast"></i> ${r.delivery_status}</span></div>`;
+    }
+    
+    // GPS / Hub indicator
+    let locIndicator = r.has_gps ? `<span><i class="bi bi-clock"></i> ${r.updated_at}</span>` : `<span style="color:#f59e0b;"><i class="bi bi-building-exclamation"></i> At Hub (No GPS)</span>`;
+    
+    html+=`<div class="rider-card" id="card-${r.id}" onclick="focusRider('${r.id}',${r.lat||0},${r.lng||0})">
       <div class="rider-card-top">
         <div class="rider-avatar-sm">${ini}</div>
         <div><div class="rider-card-name">${r.name}</div><div class="rider-card-vehicle">${r.vehicle}</div></div>
@@ -219,59 +243,79 @@ async function renderRiders(riders){
       <div class="rider-card-meta">
         <span><i class="bi bi-building"></i> ${r.hub}</span>
         <span><i class="bi bi-box-seam"></i> ${r.active_parcels} parcel${r.active_parcels!==1?'s':''}</span>
-        <span><i class="bi bi-clock"></i> ${r.updated_at}</span>
+        ${locIndicator}
       </div>
-      ${r.active_parcels>0?'<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-soft);padding:2px 7px;border-radius:4px;"><i class="bi bi-broadcast"></i> Route active</span></div>':''}
+      ${delStatusHtml}
     </div>`;
   });
   el.innerHTML=html;
-  await Promise.all(riders.map(r=>placeRiderOnMap(r)));
-  document.getElementById('simControls').style.display=demoMode?'flex':'none';
+  await Promise.all(riders.map(r=>{
+      if(r.lat && r.lng) return placeRiderOnMap(r);
+  }));
 }
 
 async function placeRiderOnMap(r){
   const popup=buildPopup(r);
   if(markers[r.id]){markers[r.id].setLatLng([r.lat,r.lng]).setIcon(riderIcon(r.status));markers[r.id].getPopup().setContent(popup);}
   else{markers[r.id]=L.marker([r.lat,r.lng],{icon:riderIcon(r.status)}).addTo(map).bindPopup(popup,{maxWidth:240});}
-  if(r.active_parcels>0) await drawRoute(r);
-  else{if(routeLines[r.id]){map.removeLayer(routeLines[r.id]);delete routeLines[r.id];}if(destMarkers[r.id]){map.removeLayer(destMarkers[r.id]);delete destMarkers[r.id];}}
+  
+  // Only draw route simulation if rider has an ACTIVE DELIVERY STATUS
+  if(r.delivery_status) {
+      await drawRoute(r);
+  } else {
+      if(routeLines[r.id]){map.removeLayer(routeLines[r.id]);delete routeLines[r.id];}
+      if(destMarkers[r.id]){map.removeLayer(destMarkers[r.id]);delete destMarkers[r.id];}
+      stopSim(r.id);
+  }
 }
 
 async function drawRoute(r){
-  const hub=HUBS.find(h=>r.hub&&r.hub.toLowerCase().includes(h.key.toLowerCase()))||HUBS[0];
+  const hub=HUBS.find(h=>r.hub_id==h.id)||HUBS[0];
   const area=r.rcpt_area||'Metro Manila';
   try{
-    const res=await fetch('/ninjavan/api/geocode_area.php?area='+encodeURIComponent(area)+'&hub='+encodeURIComponent(hub.key)+'&seed='+encodeURIComponent(r.id)+'&_='+Date.now());
+    const res=await fetch('/ninjavan/api/geocode_area.php?area='+encodeURIComponent(area)+'&hub_id='+encodeURIComponent(hub.id)+'&seed='+encodeURIComponent(r.id)+'&_='+Date.now());
     const geo=await res.json();
     // Destination pin
     if(destMarkers[r.id])destMarkers[r.id].setLatLng([geo.lat,geo.lng]);
     else destMarkers[r.id]=L.marker([geo.lat,geo.lng],{icon:destIcon()}).addTo(map)
-      .bindPopup('<div style="padding:4px;min-width:150px;"><div style="font-family:\'Sora\',sans-serif;font-weight:700;font-size:13px;">&#x1F4E6; Delivery destination</div><div style="font-size:12px;color:#666;">'+geo.zone+' \u00b7 '+geo.area+'</div><div style="font-size:11px;color:#999;margin-top:2px;">Rider: '+r.name+'</div></div>');
+      .bindPopup(`<div style="padding:4px;min-width:150px;"><div style="font-family:'Sora',sans-serif;font-weight:700;font-size:13px;">&#x1F4E6; Delivery destination</div><div style="font-size:12px;color:#666;">${geo.zone} &middot; ${geo.area}</div><div style="font-size:11px;color:#999;margin-top:2px;">Rider: ${r.name}</div><div style="font-size:11px;color:#e8002d;margin-top:2px;font-weight:700;">Status: ${r.delivery_status}</div></div>`);
     // Planned route (dashed blue)
     const rCoords=geo.waypoints.map(w=>[w[0],w[1]]);
     if(routeLines[r.id])routeLines[r.id].setLatLngs(rCoords);
-    else routeLines[r.id]=L.polyline(rCoords,{color:'#3b82f6',weight:2.5,dashArray:'8,8',opacity:0.45}).addTo(map);
+    else routeLines[r.id]=L.polyline(rCoords,{color:'#3b82f6',weight:4,dashArray:'10,10',opacity:0.8}).addTo(map);
     // Travelled trail (solid)
     const trail=[[geo.hub_lat,geo.hub_lng],[r.lat,r.lng]];
     if(travelledLines[r.id])travelledLines[r.id].setLatLngs(trail);
-    else travelledLines[r.id]=L.polyline(trail,{color:r.status==='online'?'#00b37d':'#f59e0b',weight:3,opacity:0.7}).addTo(map);
+    else travelledLines[r.id]=L.polyline(trail,{color:r.status==='online'?'#00b37d':'#f59e0b',weight:4.5,opacity:0.9}).addTo(map);
+    
     // Simulation
-    if(demoMode&&!simStates[r.id]) startSim(r.id,geo.waypoints,hub);
+    if(!simStates[r.id]) startSim(r.id,geo.waypoints,hub);
   }catch(e){console.warn('Route failed',r.id,e);}
 }
 
 // Simulation engine
 function startSim(rid,waypoints,hub){
   if(simStates[rid])stopSim(rid);
-  simStates[rid]={waypoints,step:0,paused:false,speed:parseInt(document.getElementById('simSpeed')?.value||'1'),interval:null,hub};
+  
+  // Restore step from localStorage if it exists, otherwise start at 0
+  let savedStep = localStorage.getItem('nv_sim_' + rid);
+  let step = savedStep ? parseInt(savedStep) : 0;
+  if (step >= waypoints.length) step = 0;
+  
+  simStates[rid]={waypoints,step:step,paused:false,speed:parseInt(document.getElementById('simSpeed')?.value||'1'),interval:null,hub};
   runSim(rid);
 }
 function runSim(rid){
   const s=simStates[rid];if(!s||s.paused)return;
-  const tick=Math.max(300,1800/s.speed);
+  // Make tick faster to handle the large number of tiny waypoints from OSRM
+  const tick=Math.max(50, 600/s.speed);
   s.interval=setInterval(()=>{
     if(!simStates[rid]||s.paused){clearInterval(s.interval);return;}
     if(s.step>=s.waypoints.length)s.step=0;
+    
+    // Save to local storage for persistence across reloads
+    localStorage.setItem('nv_sim_' + rid, s.step);
+    
     const[lat,lng]=s.waypoints[s.step];s.step++;
     if(markers[rid])markers[rid].setLatLng([lat,lng]);
     if(travelledLines[rid]){
@@ -283,12 +327,12 @@ function runSim(rid){
 function stopSim(rid){if(simStates[rid]?.interval)clearInterval(simStates[rid].interval);delete simStates[rid];}
 function simPlay(){Object.keys(simStates).forEach(id=>{simStates[id].paused=false;if(simStates[id].interval)clearInterval(simStates[id].interval);runSim(id);});document.getElementById('simPlayBtn').classList.add('active');document.getElementById('simPauseBtn').classList.remove('active');}
 function simPause(){Object.keys(simStates).forEach(id=>{simStates[id].paused=true;if(simStates[id].interval)clearInterval(simStates[id].interval);});document.getElementById('simPauseBtn').classList.add('active');document.getElementById('simPlayBtn').classList.remove('active');}
-function simReset(){Object.keys(simStates).forEach(id=>{simStates[id].step=0;});simPlay();}
+function simReset(){Object.keys(simStates).forEach(id=>{simStates[id].step=0;localStorage.removeItem('nv_sim_' + id);});simPlay();}
 function simSetSpeed(v){const s=parseInt(v);Object.keys(simStates).forEach(id=>{simStates[id].speed=s;if(!simStates[id].paused){if(simStates[id].interval)clearInterval(simStates[id].interval);runSim(id);}});}
 
 function buildPopup(r){
   const sc=r.status==='online'?'#00b37d':r.status==='idle'?'#f59e0b':'#aaa';
-  return `<div style="padding:6px 2px;min-width:185px;"><div class="nv-popup-title">${r.name}${demoMode?' <span style="font-size:10px;color:#f59e0b;">[DEMO]</span>':''}</div><div class="nv-popup-row"><i class="bi bi-bicycle"></i> ${r.vehicle}</div><div class="nv-popup-row"><i class="bi bi-building"></i> ${r.hub}</div><div class="nv-popup-row"><i class="bi bi-box-seam"></i> ${r.active_parcels} active parcel${r.active_parcels!==1?'s':''}</div>${r.rcpt_area?`<div class="nv-popup-row"><i class="bi bi-geo-alt"></i> \u2192 ${r.rcpt_area}</div>`:''}<div class="nv-popup-row" style="margin-top:6px;padding-top:6px;border-top:1px solid #eee;"><span style="width:7px;height:7px;display:inline-block;border-radius:50%;background:${sc};"></span><span style="text-transform:capitalize;">${r.status}</span> &nbsp;&middot;&nbsp; ${r.updated_at}</div></div>`;
+  return `<div style="padding:6px 2px;min-width:185px;"><div class="nv-popup-title">${r.name}</div><div class="nv-popup-row"><i class="bi bi-bicycle"></i> ${r.vehicle}</div><div class="nv-popup-row"><i class="bi bi-building"></i> ${r.hub}</div><div class="nv-popup-row"><i class="bi bi-box-seam"></i> ${r.active_parcels} active parcel${r.active_parcels!==1?'s':''}</div>${r.delivery_status?`<div class="nv-popup-row" style="color:#e8002d;font-weight:600;"><i class="bi bi-truck"></i> ${r.delivery_status}</div>`:''}${r.rcpt_area?`<div class="nv-popup-row"><i class="bi bi-geo-alt"></i> \u2192 ${r.rcpt_area}</div>`:''}<div class="nv-popup-row" style="margin-top:6px;padding-top:6px;border-top:1px solid #eee;"><span style="width:7px;height:7px;display:inline-block;border-radius:50%;background:${sc};"></span><span style="text-transform:capitalize;">${r.status}</span> &nbsp;&middot;&nbsp; ${r.has_gps ? r.updated_at : 'At Hub'}</div></div>`;
 }
 
 function cleanupRider(id){stopSim(id);[['markers',markers],['routeLines',routeLines],['travelledLines',travelledLines],['destMarkers',destMarkers]].forEach(([k,store])=>{if(store[id]){map.removeLayer(store[id]);delete store[id];}});}
@@ -307,7 +351,7 @@ loadRiders();
 const pollInterval=setInterval(loadRiders,15000);
 let countdown=15;
 setInterval(()=>{countdown--;if(countdown<=0)countdown=15;document.getElementById('liveLabel').textContent='Live \u00b7 refreshing in '+countdown+'s';},1000);
-window.addEventListener('beforeunload',()=>{clearInterval(pollInterval);if(demoInterval)clearInterval(demoInterval);Object.keys(simStates).forEach(id=>stopSim(id));stopGPS();});
+window.addEventListener('beforeunload',()=>{clearInterval(pollInterval);Object.keys(simStates).forEach(id=>stopSim(id));stopGPS();});
 
 window.focusRider=focusRider;window.refreshMap=refreshMap;window.toggleGPS=toggleGPS;
 window.simPlay=simPlay;window.simPause=simPause;window.simReset=simReset;window.simSetSpeed=simSetSpeed;

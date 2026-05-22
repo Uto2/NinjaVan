@@ -34,21 +34,22 @@ $provinces = [
 if(isset($_POST['step4'])){
 
     $address  = trim($_POST['address']);
+    $barangay = trim($_POST['barangay']);
     $city     = trim($_POST['city']);
     $province = trim($_POST['province']);
     $zip      = trim($_POST['zip_code']);
 
-    if(empty($address) || empty($city) || empty($province)){
+    if(empty($address) || empty($city) || empty($province) || empty($barangay)){
         $error = "Please fill in all required fields.";
     }
     else {
         // Build full address string
-        $fullAddress = $address . ', ' . $city . ', ' . $province
+        $fullAddress = $address . ', ' . $barangay . ', ' . $city . ', ' . $province
                      . ($zip ? ' ' . $zip : '');
 
-        // Generate IDs
-        $usrId = 'USR' . strtoupper(substr(md5(uniqid()), 0, 5));
-        $shprId = 'SHP' . strtoupper(substr(md5(uniqid()), 0, 5));
+        // Generate IDs — cryptographically secure
+        $usrId  = 'USR' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+        $shprId = 'SHP' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
 
         $hashed = password_hash($_SESSION['reg_password'], PASSWORD_DEFAULT);
 
@@ -171,15 +172,21 @@ if(isset($_POST['step4'])){
             </div>
         </div>
 
-        <!-- STREET ADDRESS -->
+        <!-- BARANGAY -->
         <div class="nv-field-group">
-            <label>Street / Barangay Address *</label>
+            <label>Barangay *</label>
             <div class="nv-select-wrap">
-                <select name="address" id="barangaySelect" class="nv-select" required>
+                <select name="barangay" id="barangaySelect" class="nv-select" required>
                     <option value="">Select barangay</option>
                 </select>
                 <i class="bi bi-chevron-down nv-select-icon"></i>
             </div>
+        </div>
+
+        <!-- STREET ADDRESS -->
+        <div class="nv-field-group">
+            <label>Street / Building / House No. *</label>
+            <input type="text" name="address" class="nv-field" required placeholder="e.g. 123 Main St, Block 4 Lot 5">
         </div>
 
         <div class="d-flex justify-content-between align-items-center mt-4">

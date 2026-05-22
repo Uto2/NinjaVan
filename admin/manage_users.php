@@ -12,43 +12,78 @@ $success    = "";
 $error      = "";
 
 if($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['assign_role'])) {
-    $usrId = $conn->real_escape_string($_POST['usr_id']);
-    $role  = $conn->real_escape_string($_POST['role']);
-    $hubId = $conn->real_escape_string($_POST['hub_id'] ?? '');
+    csrf_verify();
+    $usrId = $_POST['usr_id'];
+    $role  = $_POST['role'];
+    $hubId = $_POST['hub_id'] ?? '';
+
+    // Whitelist role values
+    if(!in_array($role, ['shipper','rider','staff','admin'])) {
+        $_SESSION['toast_error'] = 'Invalid role.';
+        header('Location: manage_users.php'); exit();
+    }
 
     $conn->begin_transaction();
     try {
-        $conn->query("UPDATE USER_ACCOUNT SET Usr_Type = '$role' WHERE Usr_ID = '$usrId'");
-        
-        $nameQ = $conn->query("SELECT Usr_Name, Usr_Phone FROM USER_ACCOUNT WHERE Usr_ID = '$usrId'");
-        $userData = $nameQ->fetch_assoc();
-        $name = ($nameQ->num_rows > 0) ? $conn->real_escape_string($userData['Usr_Name']) : 'New Rider';
-        $phone = ($nameQ->num_rows > 0) ? $conn->real_escape_string($userData['Usr_Phone']) : '';
+        // Update role — prepared statement
+        $stmtRole = $conn->prepare("UPDATE USER_ACCOUNT SET Usr_Type = ? WHERE Usr_ID = ?");
+        $stmtRole->bind_param('ss', $role, $usrId);
+        $stmtRole->execute();
+        $stmtRole->close();
+
+        // Fetch user info — prepared statement
+        $stmtInfo = $conn->prepare("SELECT Usr_Name, Usr_Phone FROM USER_ACCOUNT WHERE Usr_ID = ?");
+        $stmtInfo->bind_param('s', $usrId);
+        $stmtInfo->execute();
+        $infoRes  = $stmtInfo->get_result();
+        $stmtInfo->close();
+        $userData = $infoRes->num_rows > 0 ? $infoRes->fetch_assoc() : [];
+        $name  = $userData['Usr_Name']  ?? 'New User';
+        $phone = $userData['Usr_Phone'] ?? '';
 
         if($role === 'staff' && $hubId) {
-            $check = $conn->query("SELECT * FROM STAFF WHERE Stf_UsrID = '$usrId'");
-            if($check->num_rows > 0) {
-                $conn->query("UPDATE STAFF SET Stf_HubID = '$hubId' WHERE Stf_UsrID = '$usrId'");
+            $chk = $conn->prepare("SELECT Stf_ID FROM STAFF WHERE Stf_UsrID = ?");
+            $chk->bind_param('s', $usrId);
+            $chk->execute(); $chk->store_result();
+            if($chk->num_rows > 0) {
+                $chk->close();
+                $s = $conn->prepare("UPDATE STAFF SET Stf_HubID = ? WHERE Stf_UsrID = ?");
+                $s->bind_param('ss', $hubId, $usrId); $s->execute(); $s->close();
             } else {
-                $stfId = 'STF' . strtoupper(substr(md5(uniqid()), 0, 5));
-                $conn->query("INSERT INTO STAFF (Stf_ID, Stf_UsrID, Stf_HubID, Stf_Role) VALUES ('$stfId', '$usrId', '$hubId', 'Branch Manager')");
-            }
-        } 
-        elseif ($role === 'rider' && $hubId) {
-            $check = $conn->query("SELECT * FROM RIDER WHERE Rdr_UsrID = '$usrId'");
-            if(!$check || $check->num_rows === 0) $check = $conn->query("SELECT * FROM RIDER WHERE Rdr_Name = '$name'");
-            if($check && $check->num_rows > 0) {
-                $existRdr = $check->fetch_assoc();
-                $conn->query("UPDATE RIDER SET Rdr_HubID = '$hubId', Rdr_Status = 'Active', Rdr_UsrID = '$usrId' WHERE Rdr_ID = '{$existRdr['Rdr_ID']}'");
-            } else {
-                $rdrId = 'RDR' . strtoupper(substr(md5(uniqid()), 0, 5));
-                $conn->query("INSERT INTO RIDER (Rdr_ID, Rdr_UsrID, Rdr_HubID, Rdr_Name, Rdr_Phone, Rdr_VhcTyp, Rdr_Status) VALUES ('$rdrId', '$usrId', '$hubId', '$name', '$phone', 'Motorcycle', 'Active')");
+                $chk->close();
+                $stfId = 'STF' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+                $s = $conn->prepare("INSERT INTO STAFF (Stf_ID, Stf_UsrID, Stf_HubID, Stf_Role) VALUES (?, ?, ?, 'Branch Manager')");
+                $s->bind_param('sss', $stfId, $usrId, $hubId); $s->execute(); $s->close();
             }
         }
-        
-        // If changing away from rider, mark rider as inactive
+        elseif ($role === 'rider' && $hubId) {
+            $chk = $conn->prepare("SELECT Rdr_ID FROM RIDER WHERE Rdr_UsrID = ?");
+            $chk->bind_param('s', $usrId);
+            $chk->execute(); $chk->store_result();
+            if($chk->num_rows === 0) {
+                $chk->close();
+                $chk = $conn->prepare("SELECT Rdr_ID FROM RIDER WHERE Rdr_Name = ?");
+                $chk->bind_param('s', $name);
+                $chk->execute(); $chk->store_result();
+            }
+            if($chk->num_rows > 0) {
+                $chkRes = $chk->get_result(); $chk->close();
+                $existRdr = $chkRes->fetch_assoc();
+                $s = $conn->prepare("UPDATE RIDER SET Rdr_HubID=?, Rdr_Status='Active', Rdr_UsrID=? WHERE Rdr_ID=?");
+                $s->bind_param('sss', $hubId, $usrId, $existRdr['Rdr_ID']); $s->execute(); $s->close();
+            } else {
+                $chk->close();
+                $rdrId   = 'RDR' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
+                $vehicle = 'Motorcycle';
+                $s = $conn->prepare("INSERT INTO RIDER (Rdr_ID, Rdr_UsrID, Rdr_HubID, Rdr_Name, Rdr_Phone, Rdr_VhcTyp, Rdr_Status) VALUES (?, ?, ?, ?, ?, ?, 'Active')");
+                $s->bind_param('ssssss', $rdrId, $usrId, $hubId, $name, $phone, $vehicle); $s->execute(); $s->close();
+            }
+        }
+
+        // If changing away from rider, mark rider inactive
         if($role !== 'rider') {
-            $conn->query("UPDATE RIDER SET Rdr_Status = 'Inactive' WHERE Rdr_UsrID = '$usrId' OR Rdr_Name = '$name'");
+            $s = $conn->prepare("UPDATE RIDER SET Rdr_Status='Inactive' WHERE Rdr_UsrID = ?");
+            $s->bind_param('s', $usrId); $s->execute(); $s->close();
         }
 
         $conn->commit();
@@ -281,6 +316,7 @@ include "../layout/dashboard_layout.php";
                 <!-- Change Role -->
                 <td style="width:340px;">
                     <form method="POST" style="display:flex;gap:6px;align-items:center;">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="usr_id" value="<?= $u['Usr_ID'] ?>">
                         <select name="role" class="nv-input" style="padding:5px 8px;font-size:12px;width:110px;"
                                 onchange="toggleHub(this,'hub_<?= $u['Usr_ID'] ?>')" required>

@@ -51,9 +51,9 @@ $orders = $conn->query("
 
 // Status counts
 $cAll = $conn->query("SELECT COUNT(*) c FROM `ORDER`")->fetch_assoc()['c'];
-$cStg = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Staging'")->fetch_assoc()['c'];
-$cPkp = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Pending Pickup'")->fetch_assoc()['c'];
-$cTrn = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='In Transit'")->fetch_assoc()['c'];
+$cStg = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Order Created'")->fetch_assoc()['c'];
+$cPkp = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Pickup / Drop-off'")->fetch_assoc()['c'];
+$cTrn = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status IN ('Origin Sorting Hub', 'Main Sorting Hub', 'Regional Hub', 'Destination Hub')")->fetch_assoc()['c'];
 $cDlv = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_Status='Delivered'")->fetch_assoc()['c'];
 
 include "../layout/dashboard_layout.php";
@@ -76,8 +76,8 @@ include "../layout/dashboard_layout.php";
 
 <div style="display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap;">
     <?php foreach([
-        ''=>["All", $cAll], 'Staging'=>["Staging", $cStg], 'Pending Pickup'=>["Pickup", $cPkp],
-        'In Transit'=>["Transit", $cTrn], 'Delivered'=>["Delivered", $cDlv]
+        ''=>["All", $cAll], 'Order Created'=>["Order Created", $cStg], 'Pickup / Drop-off'=>["Pickup", $cPkp],
+        'Origin Sorting Hub'=>["Origin Hub", $cTrn], 'Delivered'=>["Delivered", $cDlv]
     ] as $k=>[$label,$cnt]): ?>
     <a href="?status=<?= urlencode($k) ?>" style="padding:7px 16px;border-radius:50px;font-size:12px;font-weight:600;text-decoration:none;<?= $filterStatus===$k?'background:var(--ink);color:#fff;':'background:var(--surface-2);color:var(--muted);border:1.5px solid var(--border);' ?>">
         <?= $label ?> <span style="opacity:0.6">(<?= $cnt ?>)</span>
@@ -92,7 +92,7 @@ include "../layout/dashboard_layout.php";
         <?php if($orders->num_rows === 0): ?>
             <tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon"><i class="bi bi-inbox"></i></div><h4>No orders found</h4></div></td></tr>
         <?php else: while($r = $orders->fetch_assoc()):
-            $s=$r['Ord_Status']; $map=['Staging'=>'badge-pending','Pending Pickup'=>'badge-confirmed','In Transit'=>'badge-transit','Out for Delivery'=>'badge-delivery','Delivered'=>'badge-delivered','RTS'=>'badge-failed']; $cls=$map[$s]??'badge-pending';
+            $s=$r['Ord_Status']; $map=['Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed','Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Out for Delivery'=>'badge-delivery','Delivered'=>'badge-delivered','RTS'=>'badge-failed']; $cls=$map[$s]??'badge-pending';
         ?>
             <tr>
                 <td><div style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--red);"><?= htmlspecialchars($r['AWB_TrkNum'] ?? $r['Ord_ID']) ?></div><div style="font-size:10px;color:var(--muted);"><?= date('M j, g:iA', strtotime($r['Ord_CrtdDt'])) ?></div></td>
@@ -116,7 +116,7 @@ include "../layout/dashboard_layout.php";
         <input type="hidden" name="ord_id" id="stOrdId">
         <div style="background:var(--surface);border-radius:8px;padding:12px 16px;margin-bottom:18px;"><div style="font-size:11px;color:var(--muted);">Order</div><div id="stTrk" style="font-family:'Sora',sans-serif;font-weight:700;color:var(--red);"></div></div>
         <div class="nv-form-group"><label>New Status</label><select name="new_status" id="stSel" class="nv-input" required>
-            <option value="Staging">Staging</option><option value="Pending Pickup">Pending Pickup</option><option value="In Transit">In Transit</option><option value="Delivered">Delivered</option><option value="RTS">RTS</option>
+            <option value="Order Created">Order Created</option><option value="Pickup / Drop-off">Pickup / Drop-off</option><option value="Origin Sorting Hub">Origin Sorting Hub</option><option value="Main Sorting Hub">Main Sorting Hub</option><option value="Regional Hub">Regional Hub</option><option value="Destination Hub">Destination Hub</option><option value="Delivered">Delivered</option><option value="RTS">RTS</option>
         </select></div>
     </div><div class="modal-footer"><button type="button" class="btn-nv-ghost" data-bs-dismiss="modal">Cancel</button><button type="submit" name="update_status" class="btn-nv"><i class="bi bi-check2-circle"></i> Update</button></div></form>
 </div></div></div>

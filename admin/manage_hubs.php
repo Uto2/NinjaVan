@@ -11,11 +11,12 @@ $activePage = "hubs";
 
 // ---- HANDLE ADD HUB ----
 if(isset($_POST['add_hub'])){
-    $name  = $conn->real_escape_string(trim($_POST['hub_name']));
-    $addr  = $conn->real_escape_string(trim($_POST['hub_addr']));
-    $phone = $conn->real_escape_string(trim($_POST['hub_phone']));
-    $type  = $conn->real_escape_string(trim($_POST['hub_type']));
-    $area  = $conn->real_escape_string(trim($_POST['hub_area']));
+    csrf_verify();
+    $name  = trim($_POST['hub_name']);
+    $addr  = trim($_POST['hub_addr']);
+    $phone = trim($_POST['hub_phone']);
+    $type  = trim($_POST['hub_type']);
+    $area  = trim($_POST['hub_area']);
 
     // Sequential ID generation: HUB00001, HUB00002, etc.
     $res = $conn->query("SELECT Hub_ID FROM HUB ORDER BY Hub_ID DESC LIMIT 1");
@@ -27,8 +28,13 @@ if(isset($_POST['add_hub'])){
         $newId = 'HUB00001';
     }
 
-    $q = $conn->query("INSERT INTO HUB (Hub_ID, Hub_Name, Hub_Addr, Hub_Phone, Hub_Type, Hub_Area) 
-                       VALUES ('$newId', '$name', '$addr', '$phone', '$type', '$area')");
+    $stmt = $conn->prepare(
+        "INSERT INTO HUB (Hub_ID, Hub_Name, Hub_Addr, Hub_Phone, Hub_Type, Hub_Area)
+         VALUES (?, ?, ?, ?, ?, ?)"
+    );
+    $stmt->bind_param('ssssss', $newId, $name, $addr, $phone, $type, $area);
+    $q = $stmt->execute();
+    $stmt->close();
 
     if($q) {
         $_SESSION['toast_success'] = "Hub \"$name\" created successfully!";
@@ -40,15 +46,21 @@ if(isset($_POST['add_hub'])){
 
 // ---- HANDLE EDIT HUB ----
 if(isset($_POST['edit_hub'])){
-    $id    = $conn->real_escape_string($_POST['hub_id']);
-    $name  = $conn->real_escape_string(trim($_POST['hub_name']));
-    $addr  = $conn->real_escape_string(trim($_POST['hub_addr']));
-    $phone = $conn->real_escape_string(trim($_POST['hub_phone']));
-    $type  = $conn->real_escape_string(trim($_POST['hub_type']));
-    $area  = $conn->real_escape_string(trim($_POST['hub_area']));
+    csrf_verify();
+    $id    = trim($_POST['hub_id']);
+    $name  = trim($_POST['hub_name']);
+    $addr  = trim($_POST['hub_addr']);
+    $phone = trim($_POST['hub_phone']);
+    $type  = trim($_POST['hub_type']);
+    $area  = trim($_POST['hub_area']);
 
-    $q = $conn->query("UPDATE HUB SET Hub_Name='$name', Hub_Addr='$addr', Hub_Phone='$phone', Hub_Type='$type', Hub_Area='$area' WHERE Hub_ID='$id'");
-    
+    $stmt = $conn->prepare(
+        "UPDATE HUB SET Hub_Name=?, Hub_Addr=?, Hub_Phone=?, Hub_Type=?, Hub_Area=? WHERE Hub_ID=?"
+    );
+    $stmt->bind_param('ssssss', $name, $addr, $phone, $type, $area, $id);
+    $q = $stmt->execute();
+    $stmt->close();
+
     if($q) {
         $_SESSION['toast_success'] = "Hub \"$name\" updated successfully!";
     } else {
@@ -59,17 +71,35 @@ if(isset($_POST['edit_hub'])){
 
 // ---- HANDLE DELETE HUB ----
 if(isset($_POST['delete_hub'])){
-    $id = $conn->real_escape_string($_POST['hub_id']);
+    csrf_verify();
+    $id = trim($_POST['hub_id']);
 
-    // Check dependencies
-    $staffCount = $conn->query("SELECT COUNT(*) as c FROM STAFF WHERE Stf_HubID='$id'")->fetch_assoc()['c'];
-    $riderCount = $conn->query("SELECT COUNT(*) as c FROM RIDER WHERE Rdr_HubID='$id'")->fetch_assoc()['c'];
-    $shipCount  = $conn->query("SELECT COUNT(*) as c FROM SHIPMENT WHERE Shpm_HubID='$id'")->fetch_assoc()['c'];
+    // Check dependencies — prepared statements
+    $chkStaff = $conn->prepare("SELECT COUNT(*) as c FROM STAFF WHERE Stf_HubID = ?");
+    $chkStaff->bind_param('s', $id);
+    $chkStaff->execute();
+    $staffCount = $chkStaff->get_result()->fetch_assoc()['c'];
+    $chkStaff->close();
+
+    $chkRider = $conn->prepare("SELECT COUNT(*) as c FROM RIDER WHERE Rdr_HubID = ?");
+    $chkRider->bind_param('s', $id);
+    $chkRider->execute();
+    $riderCount = $chkRider->get_result()->fetch_assoc()['c'];
+    $chkRider->close();
+
+    $chkShip = $conn->prepare("SELECT COUNT(*) as c FROM SHIPMENT WHERE Shpm_HubID = ?");
+    $chkShip->bind_param('s', $id);
+    $chkShip->execute();
+    $shipCount = $chkShip->get_result()->fetch_assoc()['c'];
+    $chkShip->close();
 
     if($staffCount > 0 || $riderCount > 0 || $shipCount > 0) {
         $_SESSION['toast_error'] = "Cannot delete hub. It has assigned staff ($staffCount), riders ($riderCount), or shipments ($shipCount).";
     } else {
-        $q = $conn->query("DELETE FROM HUB WHERE Hub_ID='$id'");
+        $del = $conn->prepare("DELETE FROM HUB WHERE Hub_ID = ?");
+        $del->bind_param('s', $id);
+        $q = $del->execute();
+        $del->close();
         if($q) {
             $_SESSION['toast_success'] = "Hub deleted successfully.";
         } else {
@@ -255,6 +285,7 @@ include "../layout/dashboard_layout.php";
         </div>
 
         <form method="POST" style="padding:24px;">
+            <?= csrf_field() ?>
             <div class="row g-3">
                 <div class="col-12">
                     <div class="nv-form-group">
@@ -329,6 +360,7 @@ include "../layout/dashboard_layout.php";
         </div>
 
         <form method="POST" style="padding:24px;">
+            <?= csrf_field() ?>
             <input type="hidden" name="hub_id" id="edit_hub_id">
             
             <div class="row g-3">

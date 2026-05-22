@@ -126,9 +126,12 @@ include "../layout/dashboard_layout.php";
             <h5 style="font-size:15px;margin-bottom:20px;">Order Status Breakdown</h5>
             <?php
             $sMeta = [
-                'Staging'          => 'badge-pending',
-                'Pending Pickup'   => 'badge-confirmed',
-                'In Transit'       => 'badge-transit',
+                'Order Created'          => 'badge-pending',
+                'Pickup / Drop-off'   => 'badge-confirmed',
+                'Origin Sorting Hub'       => 'badge-transit',
+                'Main Sorting Hub'       => 'badge-transit',
+                'Regional Hub'       => 'badge-transit',
+                'Destination Hub'       => 'badge-transit',
                 'Out for Delivery' => 'badge-delivery',
                 'Delivered'        => 'badge-delivered',
                 'RTS'              => 'badge-failed',

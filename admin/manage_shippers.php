@@ -11,9 +11,16 @@ $activePage = "shippers";
 
 // Handle suspend/activate
 if(isset($_POST['toggle_status'])){
-    $usrId = $conn->real_escape_string($_POST['usr_id']);
-    $newSt = $conn->real_escape_string($_POST['new_status']);
-    $conn->query("UPDATE USER_ACCOUNT SET Usr_Status='$newSt' WHERE Usr_ID='$usrId'");
+    csrf_verify();
+    $usrId = $_POST['usr_id'];
+    $newSt = $_POST['new_status'];
+    if(!in_array($newSt, ['Active','Suspended'])) {
+        header("Location: manage_shippers.php"); exit();
+    }
+    $stmt = $conn->prepare("UPDATE USER_ACCOUNT SET Usr_Status = ? WHERE Usr_ID = ?");
+    $stmt->bind_param('ss', $newSt, $usrId);
+    $stmt->execute();
+    $stmt->close();
     $_SESSION['toast_success'] = "Shipper status updated!";
     header("Location: manage_shippers.php"); exit();
 }
@@ -79,6 +86,7 @@ include "../layout/dashboard_layout.php";
                 <td><span class="badge-status <?= $r['Usr_Status']==='Active'?'badge-active':'badge-failed' ?>"><?= $r['Usr_Status'] ?></span></td>
                 <td>
                     <form method="POST" style="display:inline;">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="usr_id" value="<?= $r['Usr_ID'] ?>">
                         <input type="hidden" name="new_status" value="<?= $r['Usr_Status']==='Active'?'Suspended':'Active' ?>">
                         <button type="submit" name="toggle_status" class="btn-icon <?= $r['Usr_Status']==='Active'?'danger':'' ?>" title="<?= $r['Usr_Status']==='Active'?'Suspend':'Activate' ?>">

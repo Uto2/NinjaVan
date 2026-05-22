@@ -649,7 +649,7 @@ if(session_status() === PHP_SESSION_NONE){
                         <ul class="track-status-list">
                             <li class="track-status-step"><span class="step-dot"></span> Order Confirmed</li>
                             <li class="track-status-step"><span class="step-dot"></span> Picked Up</li>
-                            <li class="track-status-step active"><span class="step-dot"></span> In Transit to Hub</li>
+                            <li class="track-status-step active"><span class="step-dot"></span> Origin Sorting Hub</li>
                             <li class="track-status-step"><span class="step-dot"></span> Out for Delivery</li>
                             <li class="track-status-step"><span class="step-dot"></span> Delivered</li>
                         </ul>

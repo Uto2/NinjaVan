@@ -13,17 +13,24 @@ $error      = "";
 $success    = "";
 
 if($_SERVER['REQUEST_METHOD'] === 'POST'){
+    csrf_verify();
     $current = $_POST['current_password'];
     $newPw   = $_POST['new_password'];
     $confirm = $_POST['confirm_password'];
 
-    // Get current hash
+    // Get current hash — prepared statements
     if($role === 'admin'){
-        $res = $conn->query("SELECT Adm_Pass FROM ADMIN_ACCOUNT WHERE Adm_ID='{$_SESSION['account_id']}'");
-        $hash = $res->fetch_assoc()['Adm_Pass'];
+        $stmt = $conn->prepare("SELECT Adm_Pass FROM ADMIN_ACCOUNT WHERE Adm_ID = ?");
+        $stmt->bind_param('s', $_SESSION['account_id']);
+        $stmt->execute();
+        $hash = $stmt->get_result()->fetch_assoc()['Adm_Pass'];
+        $stmt->close();
     } else {
-        $res = $conn->query("SELECT Usr_Pass FROM USER_ACCOUNT WHERE Usr_ID='{$_SESSION['account_id']}'");
-        $hash = $res->fetch_assoc()['Usr_Pass'];
+        $stmt = $conn->prepare("SELECT Usr_Pass FROM USER_ACCOUNT WHERE Usr_ID = ?");
+        $stmt->bind_param('s', $_SESSION['account_id']);
+        $stmt->execute();
+        $hash = $stmt->get_result()->fetch_assoc()['Usr_Pass'];
+        $stmt->close();
     }
 
     if(!password_verify($current, $hash)){
@@ -74,6 +81,7 @@ include "../layout/dashboard_layout.php";
             <?php endif; ?>
 
             <form method="POST">
+                <?= csrf_field() ?>
                 <div class="nv-form-group">
                     <label>Current Password *</label>
                     <input type="password" name="current_password" class="nv-input" required>

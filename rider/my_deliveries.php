@@ -14,6 +14,7 @@ $error      = "";
 
 // Handle Status Updates
 if($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_verify();
     $action = $_POST['action'] ?? '';
     $shpmId = $conn->real_escape_string($_POST['shpm_id']);
     $ordId  = $conn->real_escape_string($_POST['ord_id']);
@@ -23,14 +24,9 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
     $conn->begin_transaction();
     try {
         if($action === 'pickup') {
-            $conn->query("UPDATE SHIPMENT SET Shpm_Status='In Transit', Shpm_PickDt='$dateNow' WHERE Shpm_ID='$shpmId'");
-            $conn->query("UPDATE `ORDER` SET Ord_Status='In Transit' WHERE Ord_ID='$ordId'");
+            $conn->query("UPDATE SHIPMENT SET Shpm_Status='Origin Sorting Hub', Shpm_PickDt='$dateNow' WHERE Shpm_ID='$shpmId'");
+            $conn->query("UPDATE `ORDER` SET Ord_Status='Origin Sorting Hub' WHERE Ord_ID='$ordId'");
             $_SESSION['toast_success'] = "Parcel marked as picked up!";
-        }
-        elseif($action === 'out_for_delivery') {
-            $conn->query("UPDATE SHIPMENT SET Shpm_Status='Out for Delivery' WHERE Shpm_ID='$shpmId'");
-            $conn->query("UPDATE `ORDER` SET Ord_Status='Out for Delivery' WHERE Ord_ID='$ordId'");
-            $_SESSION['toast_success'] = "Parcel marked as Out for Delivery!";
         }
         elseif($action === 'attempt') {
             $result = $conn->real_escape_string($_POST['result']);
@@ -55,11 +51,11 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $conn->query("UPDATE `ORDER` SET Ord_Status='RTS' WHERE Ord_ID='$ordId'");
                     $_SESSION['toast_error'] = "Max attempts reached. Parcel is marked as Return to Sender.";
                 } else {
-                    $conn->query("UPDATE SHIPMENT SET Shpm_Status='In Transit' WHERE Shpm_ID='$shpmId'");
-                    $conn->query("UPDATE `ORDER` SET Ord_Status='In Transit' WHERE Ord_ID='$ordId'");
+                    $conn->query("UPDATE SHIPMENT SET Shpm_Status='Out for Delivery' WHERE Shpm_ID='$shpmId'");
+                    $conn->query("UPDATE `ORDER` SET Ord_Status='Out for Delivery' WHERE Ord_ID='$ordId'");
                     
                     // Create new pending attempt for next try
-                    $newAtmpId = 'ATM' . strtoupper(substr(md5(uniqid()), 0, 5));
+                    $newAtmpId = 'ATM' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
                     $conn->query("INSERT INTO DELIVERY_ATTEMPT (Atmp_ID, Atmp_ShpmID, Atmp_RdrID, Atmp_Date, Atmp_Rslt) 
                                   VALUES ('$newAtmpId', '$shpmId', '$riderId', '$dateNow', 'Pending')");
                     
@@ -92,7 +88,7 @@ $deliveries = $conn->query("
     LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
     WHERE da.Atmp_RdrID = '$riderId' 
       AND da.Atmp_Rslt = 'Pending'
-      AND sh.Shpm_Status IN ('Pending Pickup', 'In Transit', 'Out for Delivery')
+      AND sh.Shpm_Status IN ('Pickup / Drop-off', 'Out for Delivery')
     ORDER BY sh.Shpm_Status DESC, o.Ord_CrtdDt ASC
 ");
 
@@ -124,8 +120,7 @@ include "../layout/dashboard_layout.php";
     <?php else: while($d = $deliveries->fetch_assoc()): 
         $s = $d['Shpm_Status'];
         $map = [
-            'Pending Pickup'=>'badge-confirmed',
-            'In Transit'=>'badge-transit',
+            'Pickup / Drop-off'=>'badge-confirmed',
             'Out for Delivery'=>'badge-delivery'
         ];
         $cls = $map[$s] ?? 'badge-pending';
@@ -148,7 +143,7 @@ include "../layout/dashboard_layout.php";
             <!-- Body -->
             <div style="padding:24px; display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:24px;">
                 
-                <?php if($s === 'Pending Pickup'): ?>
+                <?php if($s === 'Pickup / Drop-off'): ?>
                 <!-- Pickup Info -->
                 <div>
                     <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Pickup Location</div>
@@ -178,17 +173,14 @@ include "../layout/dashboard_layout.php";
 
                 <div style="display:flex; flex-direction:column; gap:8px; justify-content:center;">
                     <form method="POST">
+                        <?= csrf_field() ?>
                         <input type="hidden" name="shpm_id" value="<?= $d['Shpm_ID'] ?>">
                         <input type="hidden" name="ord_id" value="<?= $d['Ord_ID'] ?>">
                         <input type="hidden" name="atmp_id" value="<?= $d['Atmp_ID'] ?>">
                         
-                        <?php if($s === 'Pending Pickup'): ?>
+                        <?php if($s === 'Pickup / Drop-off'): ?>
                             <button type="submit" name="action" value="pickup" class="btn-nv w-100" style="justify-content:center; background:var(--ink);">
                                 <i class="bi bi-box-arrow-up"></i> Mark as Picked Up
-                            </button>
-                        <?php elseif($s === 'In Transit'): ?>
-                            <button type="submit" name="action" value="out_for_delivery" class="btn-nv w-100" style="justify-content:center; background:var(--blue);">
-                                <i class="bi bi-truck"></i> Out for Delivery
                             </button>
                         <?php elseif($s === 'Out for Delivery'): ?>
                             <button type="button" class="btn-nv w-100" style="justify-content:center; background:var(--green);" data-bs-toggle="modal" data-bs-target="#attemptModal<?= $d['Atmp_ID'] ?>">
@@ -206,6 +198,7 @@ include "../layout/dashboard_layout.php";
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0" style="border-radius:16px; overflow:hidden;">
                 <form method="POST">
+                    <?= csrf_field() ?>
                     <div class="modal-header" style="background:var(--surface); border-bottom:1px solid var(--border); padding:20px 24px;">
                         <h5 class="modal-title" style="font-family:'Sora',sans-serif; font-size:16px; font-weight:800;">Log Delivery Attempt</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

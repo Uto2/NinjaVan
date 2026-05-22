@@ -1,6 +1,6 @@
 -- ============================================================
 -- NinjaVan PH — Database Backup
--- Generated : 2026-05-13 15:29:35
+-- Generated : 2026-05-22 09:30:24
 -- Database  : NinjaVanPH
 -- ============================================================
 
@@ -25,7 +25,7 @@ CREATE TABLE `admin_account` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `admin_account` (`Adm_ID`, `Adm_Name`, `Adm_Email`, `Adm_Pass`) VALUES
-  ('ADM00001', 'Super Admin', 'admin@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6');
+  ('ADM00001', 'Super Admin', 'admin@ninjavan.ph', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K');
 
 -- ------------------------------------------------------------
 -- Table: `airway_bill`
@@ -48,7 +48,14 @@ INSERT INTO `airway_bill` (`AWB_ID`, `AWB_TrkNum`, `AWB_OrdID`, `AWB_PrtDt`, `AW
   ('AWB00001', 'NVPH8427A1BF', 'ORD00001', '2026-05-12 17:28:02', 'Thermal', 'NVPH8427A1BF'),
   ('AWB00002', 'NVPHA1E1D7D5', 'ORD00002', '2026-05-12 18:36:04', 'Thermal', 'NVPHA1E1D7D5'),
   ('AWB00003', 'NVPH09696557', 'ORD00003', '2026-05-12 18:53:37', 'Thermal', 'NVPH09696557'),
-  ('AWB00004', 'NVPHF2A7C897', 'ORD00004', '2026-05-12 19:10:54', 'Thermal', 'NVPHF2A7C897');
+  ('AWB00004', 'NVPHF2A7C897', 'ORD00004', '2026-05-12 19:10:54', 'Thermal', 'NVPHF2A7C897'),
+  ('AWB00005', 'NVPH077C6EFF', 'ORD00005', '2026-05-18 06:26:24', 'Thermal', 'NVPH077C6EFF'),
+  ('AWB00006', 'NVPH3A63BE07', 'ORD00006', '2026-05-18 09:26:44', 'Thermal', 'NVPH3A63BE07'),
+  ('AWB00007', 'NVPH4FCE657D', 'ORD00007', '2026-05-19 05:17:21', 'Thermal', 'NVPH4FCE657D'),
+  ('AWB00008', 'NVPH937C8735', 'ORD00008', '2026-05-20 19:14:08', 'Thermal', 'NVPH937C8735'),
+  ('AWB00009', 'NVPHBEE50460', 'ORD00009', '2026-05-21 14:41:12', 'Thermal', 'NVPHBEE50460'),
+  ('AWB00010', 'NVPH6ABA50E5', 'ORD00010', '2026-05-21 15:10:58', 'Thermal', 'NVPH6ABA50E5'),
+  ('AWB00011', 'NVPH013B21A7', 'ORD00011', '2026-05-21 15:40:30', 'Thermal', 'NVPH013B21A7');
 
 -- ------------------------------------------------------------
 -- Table: `delivery_attempt`
@@ -73,7 +80,18 @@ CREATE TABLE `delivery_attempt` (
 INSERT INTO `delivery_attempt` (`Atmp_ID`, `Atmp_RdrID`, `Atmp_ShpmID`, `Atmp_Rslt`, `Atmp_FailRsn`, `Atmp_Sign`, `Atmp_Notes`, `Atmp_Date`) VALUES
   ('ATM00001', 'RDR00001', 'SHP00001', 'Successful', 'No one home', 'Kapoy', NULL, '2026-05-12 17:33:35'),
   ('ATM00002', 'RDR00001', 'SHP00002', 'Successful', 'No one home', 'dasdas', NULL, '2026-05-12 19:20:48'),
-  ('ATM00003', 'RDR00001', 'SHP00003', 'Successful', 'No one home', 'Kigwa', NULL, '2026-05-12 19:18:01');
+  ('ATM00003', 'RDR00001', 'SHP00003', 'Successful', 'No one home', 'Kigwa', NULL, '2026-05-12 19:18:01'),
+  ('ATM00004', 'RDR00001', 'SHP00004', 'Successful', 'No one home', 'Dariel Nation', NULL, '2026-05-18 06:29:55'),
+  ('ATM00005', 'RDR00001', 'SHP00005', 'Successful', 'No one home', 'asdas', NULL, '2026-05-19 05:18:29'),
+  ('ATM00006', 'RDR00001', 'SHP00006', 'Successful', 'No one home', 'CYdel', NULL, '2026-05-20 13:33:30'),
+  ('ATM00007', 'RDR28853', 'SHP00007', 'Pending', NULL, NULL, NULL, '2026-05-21 14:07:12'),
+  ('ATM00008', 'RDR-D374EB', 'SHP00008', 'Failed', 'Reassigned', NULL, NULL, '2026-05-21 14:43:22'),
+  ('ATM00009', 'RDR-D374EB', 'SHP00008', 'Successful', 'No one home', 'W', NULL, '2026-05-21 14:45:25'),
+  ('ATM00010', 'RDR-D374EB', 'SHP00009', 'Failed', 'Reassigned', NULL, NULL, '2026-05-21 15:12:48'),
+  ('ATM00011', 'RDR-D374EB', 'SHP00009', 'Successful', 'No one home', 'w', NULL, '2026-05-21 15:19:58'),
+  ('ATM00012', 'RDR-D374EB', 'SHP00010', 'Failed', 'Reassigned', NULL, NULL, '2026-05-21 15:41:46'),
+  ('ATM00013', 'RDR-D374EB', 'SHP00010', 'Pending', NULL, NULL, NULL, '2026-05-21 15:42:44'),
+  ('ATM00014', 'RDR-D374EB', 'SHP00009', 'Pending', NULL, NULL, NULL, '2026-05-21 16:31:49');
 
 -- ------------------------------------------------------------
 -- Table: `hub`
@@ -86,14 +104,18 @@ CREATE TABLE `hub` (
   `Hub_Phone` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `Hub_Type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'Distribution Center',
   `Hub_Area` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Hub_Lat` decimal(10,7) DEFAULT NULL,
+  `Hub_Lng` decimal(10,7) DEFAULT NULL,
   PRIMARY KEY (`Hub_ID`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `hub` (`Hub_ID`, `Hub_Name`, `Hub_Addr`, `Hub_Phone`, `Hub_Type`, `Hub_Area`) VALUES
-  ('HUB00001', 'Makati Main Hub', 'Ayala Ave, Makati City', '09171234567', 'Distribution Center', 'Metro Manila'),
-  ('HUB00002', 'QC North Hub', 'Quezon Ave, Quezon City', '09181234567', 'Sorting Hub', 'Metro Manila'),
-  ('HUB00003', 'Cebu Hub', 'N. Bacalso Ave, Cebu City', '09191234567', 'Distribution Center', 'Cebu'),
-  ('HUB00004', 'Davao Southern Hub', 'Quimpo Blvd, Davao City', '09201234567', 'Sorting Hub', 'Davao');
+INSERT INTO `hub` (`Hub_ID`, `Hub_Name`, `Hub_Addr`, `Hub_Phone`, `Hub_Type`, `Hub_Area`, `Hub_Lat`, `Hub_Lng`) VALUES
+  ('HUB00001', 'Makati Main Hub', 'Ayala Ave, Makati City', '09171234567', 'Distribution Center', 'Metro Manila', '14.5995000', '120.9842000'),
+  ('HUB00002', 'QC North Hub', 'Quezon Ave, Quezon City', '09181234567', 'Sorting Hub', 'Metro Manila', '14.5995000', '120.9842000'),
+  ('HUB00003', 'Cebu Hub', 'N. Bacalso Ave, Cebu City', '09191234567', 'Distribution Center', 'Cebu', '10.3157000', '123.8854000'),
+  ('HUB00004', 'Davao Southern Hub', 'Quimpo Blvd, Davao City', '09201234567', 'Sorting Hub', 'Davao', '7.1907000', '125.4553000'),
+  ('HUB00005', 'Visayas Main Sorting Hub', 'A.S. Fortuna St, Mandaue City, Cebu', '09187654321', 'Sorting Hub', 'Visayas', NULL, NULL),
+  ('HUB00006', 'Cydels Hub', 'Banilad Es Fourtuna', '09123123123', 'Distribution Center', 'Visayas', NULL, NULL);
 
 -- ------------------------------------------------------------
 -- Table: `notification`
@@ -125,7 +147,7 @@ INSERT INTO `notification` (`Notif_ID`, `Notif_UsrID`, `Notif_Title`, `Notif_Bod
   ('8', 'USR00003', '⚠️ Delivery Attempt Logged', 'Your delivery attempt for TRK-000123 has been recorded.', 'delivery', 'exclamation-triangle-fill', '/ninjavan/rider/history.php', '1', '2026-05-13 01:09:15'),
   ('9', 'USR00004', '🛵 New Parcel Assigned', 'A new parcel has been dispatched to you. Check your deliveries.', 'dispatch', 'truck', '/ninjavan/rider/my_deliveries.php', '0', '2026-05-13 01:09:15'),
   ('10', 'USR00004', '⚠️ Delivery Attempt Logged', 'Your delivery attempt for TRK-000123 has been recorded.', 'delivery', 'exclamation-triangle-fill', '/ninjavan/rider/history.php', '0', '2026-05-13 01:09:15'),
-  ('11', 'USR00005', '📦 3 Parcels Need Dispatch', 'You have 3 parcels waiting to be assigned to a rider.', 'dispatch', 'send-check-fill', '/ninjavan/staff/dispatch.php', '0', '2026-05-13 01:09:15'),
+  ('11', 'USR00005', '📦 3 Parcels Need Dispatch', 'You have 3 parcels waiting to be assigned to a rider.', 'dispatch', 'send-check-fill', '/ninjavan/staff/dispatch.php', '1', '2026-05-13 01:09:15'),
   ('12', 'USR00005', '🧾 Walk-in Booking Received', 'A new walk-in booking was submitted at your hub.', 'order', 'person-plus-fill', '/ninjavan/staff/hub_inventory.php', '0', '2026-05-13 01:09:15');
 
 -- ------------------------------------------------------------
@@ -137,7 +159,7 @@ CREATE TABLE `order` (
   `Ord_ShprID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `Ord_PclID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `Ord_SvcID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Ord_Status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Staging',
+  `Ord_Status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Order Created',
   `Ord_PickPref` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'Hub Dropoff',
   `Ord_PickAddr` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `Ord_PickDt` date DEFAULT NULL,
@@ -153,9 +175,16 @@ CREATE TABLE `order` (
 
 INSERT INTO `order` (`Ord_ID`, `Ord_ShprID`, `Ord_PclID`, `Ord_SvcID`, `Ord_Status`, `Ord_PickPref`, `Ord_PickAddr`, `Ord_PickDt`, `Ord_CrtdDt`) VALUES
   ('ORD00001', 'SHP235D4', 'PCL00001', 'SVC00002', 'Delivered', 'Scheduled Pickup', '123Kabit / Kabitstreets, Cebu, Cebu 2321', '2026-05-12', '2026-05-12 17:28:02'),
-  ('ORD00002', 'SHP235D4', 'PCL00002', 'SVC00001', 'In Transit', 'Scheduled Pickup', 'gsdgsvcxvxczv', '2026-05-13', '2026-05-12 18:36:04'),
+  ('ORD00002', 'SHP235D4', 'PCL00002', 'SVC00001', 'Pickup / Drop-off', 'Scheduled Pickup', 'gsdgsvcxvxczv', '2026-05-13', '2026-05-12 18:36:04'),
   ('ORD00003', 'SHP235D4', 'PCL00003', 'SVC00001', 'Delivered', 'Dropoff', NULL, NULL, '2026-05-12 18:53:37'),
-  ('ORD00004', 'SHP235D4', 'PCL00004', 'SVC00001', 'Delivered', 'Scheduled Pickup', '123Kabit / Kabitstreets, Cebu, Cebu 2321', '2026-05-13', '2026-05-12 19:10:54');
+  ('ORD00004', 'SHP235D4', 'PCL00004', 'SVC00001', 'Delivered', 'Scheduled Pickup', '123Kabit / Kabitstreets, Cebu, Cebu 2321', '2026-05-13', '2026-05-12 19:10:54'),
+  ('ORD00005', 'SHP94105', 'PCL00005', 'SVC00002', 'Delivered', 'Scheduled Pickup', 'Tomas Street 12 / Tugbongan, Consolacion, Cebu 6001', '2026-05-18', '2026-05-18 06:26:24'),
+  ('ORD00006', 'SHP9F92B', 'PCL00006', 'SVC00001', 'Delivered', 'Scheduled Pickup', 'Tomas Street 12 / Tugbongan, Consolacion, Cebu 6001', '2026-05-18', '2026-05-18 09:26:44'),
+  ('ORD00007', 'SHP9F92B', 'PCL00007', 'SVC00001', 'Delivered', 'Scheduled Pickup', 'Tomas Street 12 / Tugbongan, Consolacion, Cebu 6001', '2026-05-19', '2026-05-19 05:17:21'),
+  ('ORD00008', 'SHP235D4', 'PCL00008', 'SVC00002', 'Pickup / Drop-off', 'Scheduled Pickup', '123Kabit / Kabitstreets, Cebu, Cebu 2321', '2026-05-21', '2026-05-20 19:14:08'),
+  ('ORD00009', 'SHP4AADE', 'PCL00009', 'SVC00002', 'Delivered', 'Scheduled Pickup', 'Tugbongan, Consolacion, Cebu 6001', '2026-05-21', '2026-05-21 14:41:12'),
+  ('ORD00010', 'SHP4AADE', 'PCL00010', 'SVC00002', 'Out for Delivery', 'Scheduled Pickup', 'Tugbongan, Consolacion, Cebu 6001', '2026-05-21', '2026-05-21 15:10:58'),
+  ('ORD00011', 'SHP4AADE', 'PCL00011', 'SVC00002', 'Out for Delivery', 'Scheduled Pickup', 'Tugbongan, Consolacion, Cebu 6001', '2026-05-21', '2026-05-21 15:40:30');
 
 -- ------------------------------------------------------------
 -- Table: `parcel`
@@ -180,7 +209,14 @@ INSERT INTO `parcel` (`Pcl_ID`, `Pcl_ShprID`, `Pcl_Wght`, `Pcl_DeclVal`, `Pcl_Is
   ('PCL00001', 'SHP235D4', '12.00', '123.00', 'Yes', '123.00', 'RCPT00001', '2026-05-12 17:28:02', '0'),
   ('PCL00002', 'SHP235D4', '19.90', '1234.00', 'Yes', '1234.00', 'RCPT00002', '2026-05-12 18:36:04', '0'),
   ('PCL00003', 'SHP235D4', '20.00', '123.00', 'Yes', '1500.00', 'RCPT00003', '2026-05-12 18:53:37', '0'),
-  ('PCL00004', 'SHP235D4', '15.00', '132.00', 'Yes', '150.00', 'RCPT00004', '2026-05-12 19:10:54', '0');
+  ('PCL00004', 'SHP235D4', '15.00', '132.00', 'Yes', '150.00', 'RCPT00004', '2026-05-12 19:10:54', '0'),
+  ('PCL00005', 'SHP94105', '15.00', '500.00', 'Yes', '550.00', 'RCPT00005', '2026-05-18 06:26:24', '0'),
+  ('PCL00006', 'SHP9F92B', '15.00', '1500.00', 'Yes', '1505.00', 'RCPT00006', '2026-05-18 09:26:44', '0'),
+  ('PCL00007', 'SHP9F92B', '15.00', '123.00', 'Yes', '1234.00', 'RCPT00007', '2026-05-19 05:17:21', '0'),
+  ('PCL00008', 'SHP235D4', '15.00', '1234.00', 'Yes', '1234.00', 'RCPT00008', '2026-05-20 19:14:08', '0'),
+  ('PCL00009', 'SHP4AADE', '12.00', '123.00', 'Yes', '123.00', 'RCPT00009', '2026-05-21 14:41:12', '0'),
+  ('PCL00010', 'SHP4AADE', '12.00', '123.00', 'Yes', '123.00', 'RCPT00010', '2026-05-21 15:10:58', '0'),
+  ('PCL00011', 'SHP4AADE', '12.00', '123.00', 'Yes', '123.00', 'RCPT00011', '2026-05-21 15:40:30', '0');
 
 -- ------------------------------------------------------------
 -- Table: `recipient`
@@ -199,7 +235,14 @@ INSERT INTO `recipient` (`Rcpt_ID`, `Rcpt_Name`, `Rcpt_Phone`, `Rcpt_Addr`, `Rcp
   ('RCPT00001', 'Juan', '09123456789', '123 tereasadasda', 'Visayas'),
   ('RCPT00002', 'Cydelgwapo', '091231231222', '627,tomaas,gwaapo,consolaacion,cebu', 'Visayas'),
   ('RCPT00003', 'Juan Cydel', '09676767', '2 Tomas Street Tugbongan', 'Visayas'),
-  ('RCPT00004', 'Cydelgwapo2', '0912312312221', 'House of the city', 'Visayas');
+  ('RCPT00004', 'Cydelgwapo2', '0912312312221', 'House of the city', 'Visayas'),
+  ('RCPT00005', 'Dariel Nation', '0912345678', 'Tomas Street, Tugbongan, Consolacion, Cebu', 'Visayas'),
+  ('RCPT00006', 'Cydel Test Recipient', '09123456', 'Tomas Street, Tugbongan, Consolacion, Cebu', 'Visayas'),
+  ('RCPT00007', 'Juan Cydel', '091231231222', '67,tomas,gwapo,consolacion,cebu', 'Visayas'),
+  ('RCPT00008', 'Dar Nation', '091231231222', 'Tugbongan, Consolacion, Cebu', 'Visayas'),
+  ('RCPT00009', 'Juan Delashup', '09123123', 'Banilad, Mandaue City, Cebu', 'Visayas'),
+  ('RCPT00010', 'Dar Nationizm', '091231231222', 'Tugbongan, Consolacion, Cebu', 'Visayas'),
+  ('RCPT00011', 'test test', '123123', 'Tugbongan, Consolacion, Cebu', 'Visayas');
 
 -- ------------------------------------------------------------
 -- Table: `rider`
@@ -221,8 +264,11 @@ CREATE TABLE `rider` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `rider` (`Rdr_ID`, `Rdr_UsrID`, `Rdr_Name`, `Rdr_Phone`, `Rdr_VhcTyp`, `Rdr_HubID`, `Rdr_Status`) VALUES
+  ('RDR-25F14E', 'USR-25ED8C', 'Test Rider', '09123456789', 'Motorcycle', 'HUB00003', 'Active'),
+  ('RDR-D374EB', 'USR-D374E3', 'rider cydel', '09876554312', 'Motorcycle', 'HUB00003', 'Active'),
   ('RDR00001', 'USR00003', 'Ryo Yamada', '09173333333', 'Motorcycle', 'HUB00003', 'Active'),
-  ('RDR00002', 'USR00004', 'Carlo Mendoza', '09174444444', 'Motorcycle', 'HUB00001', 'Active');
+  ('RDR00002', 'USR00004', 'Carlo Mendoza', '09174444444', 'Motorcycle', 'HUB00001', 'Active'),
+  ('RDR28853', 'USR5507F', 'Cydel Rider', '09123456', 'Motorcycle', 'HUB00004', 'Active');
 
 -- ------------------------------------------------------------
 -- Table: `rider_gps`
@@ -230,17 +276,15 @@ INSERT INTO `rider` (`Rdr_ID`, `Rdr_UsrID`, `Rdr_Name`, `Rdr_Phone`, `Rdr_VhcTyp
 DROP TABLE IF EXISTS `rider_gps`;
 CREATE TABLE `rider_gps` (
   `GPS_ID` int NOT NULL AUTO_INCREMENT,
-  `GPS_RdrID` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `GPS_RdrID` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `GPS_Lat` decimal(10,7) NOT NULL,
   `GPS_Lng` decimal(10,7) NOT NULL,
   `GPS_UpdatedAt` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`GPS_ID`),
   UNIQUE KEY `uk_rider` (`GPS_RdrID`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `rider_gps` (`GPS_ID`, `GPS_RdrID`, `GPS_Lat`, `GPS_Lng`, `GPS_UpdatedAt`) VALUES
-  ('1', 'RDR00001', '14.5547000', '121.0244000', '2026-05-13 01:09:15'),
-  ('2', 'RDR00002', '14.5795000', '120.9842000', '2026-05-13 01:09:15');
+-- (no data)
 
 -- ------------------------------------------------------------
 -- Table: `service_type`
@@ -270,7 +314,7 @@ CREATE TABLE `shipment` (
   `Shpm_ID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `Shpm_OrdID` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `Shpm_HubID` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `Shpm_Status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pending Pickup',
+  `Shpm_Status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Pickup / Drop-off',
   `Shpm_AtmCnt` int NOT NULL DEFAULT '0',
   `Shpm_PickDt` datetime DEFAULT NULL,
   `Shpm_DlvDt` datetime DEFAULT NULL,
@@ -285,7 +329,14 @@ CREATE TABLE `shipment` (
 INSERT INTO `shipment` (`Shpm_ID`, `Shpm_OrdID`, `Shpm_HubID`, `Shpm_Status`, `Shpm_AtmCnt`, `Shpm_PickDt`, `Shpm_DlvDt`, `Shpm_Dt`) VALUES
   ('SHP00001', 'ORD00001', 'HUB00003', 'Delivered', '1', '2026-05-12 17:30:37', '2026-05-12 17:33:35', '2026-05-12 23:29:35'),
   ('SHP00002', 'ORD00004', 'HUB00003', 'Delivered', '1', '2026-05-12 19:12:24', '2026-05-12 19:20:48', '2026-05-13 01:11:56'),
-  ('SHP00003', 'ORD00003', 'HUB00003', 'Delivered', '1', '2026-05-12 19:12:22', '2026-05-12 19:18:01', '2026-05-13 01:12:02');
+  ('SHP00003', 'ORD00003', 'HUB00003', 'Delivered', '1', '2026-05-12 19:12:22', '2026-05-12 19:18:01', '2026-05-13 01:12:02'),
+  ('SHP00004', 'ORD00005', 'HUB00003', 'Delivered', '1', '2026-05-18 06:27:25', '2026-05-18 06:29:55', '2026-05-18 12:27:04'),
+  ('SHP00005', 'ORD00007', 'HUB00003', 'Delivered', '1', '2026-05-19 05:18:19', '2026-05-19 05:18:29', '2026-05-19 11:18:06'),
+  ('SHP00006', 'ORD00006', 'HUB00003', 'Delivered', '1', '2026-05-19 05:18:18', '2026-05-20 13:33:30', '2026-05-19 11:18:08'),
+  ('SHP00007', 'ORD00008', 'HUB00003', 'Pickup / Drop-off', '0', NULL, NULL, '2026-05-21 20:07:12'),
+  ('SHP00008', 'ORD00009', 'HUB00003', 'Delivered', '1', '2026-05-21 14:43:40', '2026-05-21 14:45:25', '2026-05-21 20:43:22'),
+  ('SHP00009', 'ORD00010', 'HUB00003', 'Out for Delivery', '1', '2026-05-21 15:13:14', '2026-05-21 15:19:58', '2026-05-21 21:12:48'),
+  ('SHP00010', 'ORD00011', 'HUB00003', 'Out for Delivery', '0', '2026-05-21 15:42:08', NULL, '2026-05-21 21:41:46');
 
 -- ------------------------------------------------------------
 -- Table: `shipper`
@@ -303,6 +354,12 @@ CREATE TABLE `shipper` (
 
 INSERT INTO `shipper` (`Shpr_ID`, `Shpr_UsrID`, `Shpr_BizName`, `Shpr_PickAddr`) VALUES
   ('SHP235D4', 'USR8CBA0', 'Cydel Judilla', '123Kabit / Kabitstreets, Cebu, Cebu 2321'),
+  ('SHP4AADE', 'USREEF95', 'Shipper Cydel', 'Tugbongan, Consolacion, Cebu 6001'),
+  ('SHP7C760', 'USR6C11C', 'zcxzxc zxzxczxcz', 'Tugbongan, Consolacion, Cebu 6001'),
+  ('SHP94105', 'USRA8E55', 'Juan Tho', 'Tomas Street 12 / Tugbongan, Consolacion, Cebu 6001'),
+  ('SHP9F92B', 'USR63598', 'Cydel Judilla', 'Tomas Street 12 / Tugbongan, Consolacion, Cebu 6001'),
+  ('SHPA7604', 'USR5507F', 'Cydel Rider', 'Somewhere In Davao, Trento, Davao de Oro 1234'),
+  ('SHPFB949', 'USR9F1AD', 'Manila Staff', 'Somewhere In Manila, Makati, Metro Manila 1111'),
   ('SHPR0001', 'USR00001', 'JDC Supplies', 'Blk 1 Lot 2, Makati City'),
   ('SHPR0002', 'USR00002', 'Maria Fashion Store', 'Unit 3, Taguig City');
 
@@ -328,7 +385,14 @@ INSERT INTO `shipping_fee` (`Fee_ID`, `Fee_OrdID`, `Fee_Base`, `Fee_Insur`, `Fee
   ('FEE00001', 'ORD00001', '120.00', '0.00', '0.00', '0.00', '2.46', '122.46'),
   ('FEE00002', 'ORD00002', '85.00', '0.00', '0.00', '0.00', '24.68', '109.68'),
   ('FEE00003', 'ORD00003', '85.00', '0.00', '0.00', '0.00', '30.00', '115.00'),
-  ('FEE00004', 'ORD00004', '85.00', '0.00', '0.00', '0.00', '3.00', '88.00');
+  ('FEE00004', 'ORD00004', '85.00', '0.00', '0.00', '0.00', '3.00', '88.00'),
+  ('FEE00005', 'ORD00005', '120.00', '0.00', '0.00', '0.00', '11.00', '131.00'),
+  ('FEE00006', 'ORD00006', '85.00', '0.00', '0.00', '0.00', '30.10', '115.10'),
+  ('FEE00007', 'ORD00007', '85.00', '0.00', '0.00', '0.00', '24.68', '109.68'),
+  ('FEE00008', 'ORD00008', '120.00', '0.00', '0.00', '0.00', '24.68', '144.68'),
+  ('FEE00009', 'ORD00009', '120.00', '0.00', '0.00', '0.00', '2.46', '122.46'),
+  ('FEE00010', 'ORD00010', '120.00', '0.00', '0.00', '0.00', '2.46', '122.46'),
+  ('FEE00011', 'ORD00011', '120.00', '0.00', '0.00', '0.00', '2.46', '122.46');
 
 -- ------------------------------------------------------------
 -- Table: `staff`
@@ -347,7 +411,12 @@ CREATE TABLE `staff` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `staff` (`Stf_ID`, `Stf_UsrID`, `Stf_HubID`, `Stf_Role`) VALUES
-  ('STF00001', 'USR00005', 'HUB00003', 'Branch Manager');
+  ('STF-2B98A3', 'USR-2B702E', 'HUB00001', 'Operations Manager'),
+  ('STF-70AB37', 'USR-709B22', 'HUB00006', 'Operations Manager'),
+  ('STF-773AA8', 'USR-772971', 'HUB00003', 'Operations Manager'),
+  ('STF-E6D6DB', 'USR-E6AE91', 'HUB00003', 'Operations Manager'),
+  ('STF00001', 'USR00005', 'HUB00003', 'Branch Manager'),
+  ('STFBAF7C', 'USR9F1AD', 'HUB00001', 'Branch Manager');
 
 -- ------------------------------------------------------------
 -- Table: `user_account`
@@ -367,12 +436,24 @@ CREATE TABLE `user_account` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `user_account` (`Usr_ID`, `Usr_Name`, `Usr_Email`, `Usr_Pass`, `Usr_Phone`, `Usr_Type`, `Usr_Status`, `Usr_DateReg`) VALUES
-  ('USR00001', 'Juan Dela Cruz', 'juan@email.com', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09171111111', 'shipper', 'Active', '2026-05-12 23:07:40'),
-  ('USR00002', 'Maria Santos', 'maria@email.com', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09172222222', 'shipper', 'Active', '2026-05-12 23:07:40'),
-  ('USR00003', 'Ryo Yamada', 'ryo@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09173333333', 'rider', 'Active', '2026-05-12 23:07:40'),
-  ('USR00004', 'Carlo Mendoza', 'carlo@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09174444444', 'rider', 'Active', '2026-05-12 23:07:40'),
-  ('USR00005', 'Sarah Staff', 'staff@ninjavan.ph', '$2y$10$NQIqvX0Hj7aCEPkcyrWyMOO6D5CmWPAK8lafiKfYyQxJ.W5NXy4d6', '09175555555', 'staff', 'Active', '2026-05-12 23:07:40'),
-  ('USR8CBA0', 'Cydel Judilla', 'test1@gmail.com', '$2y$10$38SoisJiKLgRMB39qrk8uupgso5Bni.ld.VR3Dss.4VwgMqyVVDH6', '+63 931231232', 'shipper', 'Active', '2026-05-12 23:26:55');
+  ('USR-25ED8C', 'Test Rider', 'testrider@ninjavan.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09123456789', 'rider', 'Active', '2026-05-19 15:28:34'),
+  ('USR-2B702E', 'Cydel Judilla', 'CydelStaff1@gmail.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '0991460773', 'staff', 'Active', '2026-05-18 15:14:42'),
+  ('USR-709B22', 'Test Test1', 'Test@sdas.com', '$2y$10$pKeH/TPxc6kyU2VCSQsiieaYm2EIjvHE1h1yv0i1UdU1rsH8GhMzS', '0912312321', 'staff', 'Active', '2026-05-20 19:35:03'),
+  ('USR-772971', 'Cydel Staff', 'cydelstaff@ninjavan.com', '$2y$10$zPYqI2tWOj/wOJWlamV1yOvMvi4mWOBedO7HuisTvpZKHSx927gCS', '091231232', 'staff', 'Active', '2026-05-21 20:43:03'),
+  ('USR-D374E3', 'rider cydel', 'cydelrider@gmail.com', '$2y$10$pVeh77DYDr8r3ST2EOMDH.TMaNb/cWKU1f3V40qYJE9eMJDWp4/vO', '09876554312', 'rider', 'Active', '2026-05-21 20:42:05'),
+  ('USR-E6AE91', 'Cydel Staff', 'CydelStaff@ninjavan.ph', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '091234567891', 'staff', 'Active', '2026-05-18 12:37:34'),
+  ('USR00001', 'Juan Dela Cruz', 'juan@email.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09171111111', 'shipper', 'Active', '2026-05-12 23:07:40'),
+  ('USR00002', 'Maria Santos', 'maria@email.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09172222222', 'shipper', 'Active', '2026-05-12 23:07:40'),
+  ('USR00003', 'Ryo Yamada', 'ryo@ninjavan.ph', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09173333333', 'rider', 'Active', '2026-05-12 23:07:40'),
+  ('USR00004', 'Carlo Mendoza', 'carlo@ninjavan.ph', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09174444444', 'rider', 'Active', '2026-05-12 23:07:40'),
+  ('USR00005', 'Sarah Staff', 'staff@ninjavan.ph', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09175555555', 'staff', 'Active', '2026-05-12 23:07:40'),
+  ('USR5507F', 'Cydel Rider', 'CydelRider@ninjavan.ph', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09123456', 'rider', 'Active', '2026-05-18 12:35:04'),
+  ('USR63598', 'Cydel Judilla', 'CydelTest@gmail.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '099914607233', 'shipper', 'Active', '2026-05-18 15:05:19'),
+  ('USR6C11C', 'zcxzxc zxzxczxcz', 'xdsadasd@gmail.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '21123123123123', 'shipper', 'Active', '2026-05-19 15:32:42'),
+  ('USR8CBA0', 'Cydel Judilla', 'test1@gmail.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '+63 931231232', 'shipper', 'Active', '2026-05-12 23:26:55'),
+  ('USR9F1AD', 'Manila Staff', 'StaffManila@ninjavan.ph', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '091234567', 'staff', 'Active', '2026-05-18 12:32:20'),
+  ('USRA8E55', 'Juan Tho', 'Juan1@gmail.com', '$2y$10$UEP/lbs3lMJvVJjXlQP/CeOKgoGkMLmaDEtyBUsUixRBNuZaBdW2K', '09123456789', 'shipper', 'Active', '2026-05-18 12:24:09'),
+  ('USREEF95', 'Shipper Cydel', 'cydelship@gmail.com', '$2y$10$waolpeQaq739bKEAu62hYeUjh3MOlt/jFuh.bLjpRjCj1v7NnhfIC', '09123432', 'shipper', 'Active', '2026-05-21 20:40:17');
 
 SET FOREIGN_KEY_CHECKS=1;
 -- ============================================================

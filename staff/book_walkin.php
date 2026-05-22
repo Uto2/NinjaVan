@@ -17,15 +17,7 @@ $hub = $conn->query("SELECT * FROM HUB WHERE Hub_ID='$hubId'")->fetch_assoc();
 
 // Ensure SERVICE_TYPE has data
 $svcCheck = $conn->query("SELECT COUNT(*) c FROM SERVICE_TYPE")->fetch_assoc()['c'];
-if($svcCheck == 0){
-    $conn->query("INSERT INTO SERVICE_TYPE (Svc_ID, Svc_Name, Svc_MaxWght, Svc_BaseRte, Svc_LeadTm) VALUES 
-        ('SVC00001', 'Standard Delivery', 20, 85,  '3-5 Days'),
-        ('SVC00002', 'Express Delivery',  20, 120, '1-2 Days'),
-        ('SVC00003', 'Same-Day Delivery',  5, 150, 'Same Day'),
-        ('SVC00004', 'Next-Day Delivery', 20, 100, 'Before 6PM'),
-        ('SVC00005', 'COD Standard',      20, 85,  '3-5 Days')
-    ");
-}
+if($svcCheck == 0) require_once '../config/seed_services.php';
 $services = $conn->query("SELECT * FROM SERVICE_TYPE");
 
 function generateId($conn, $prefix, $table, $column) {
@@ -39,6 +31,7 @@ function generateId($conn, $prefix, $table, $column) {
 }
 
 if($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_verify();
     // Sender info
     $senderFName = $conn->real_escape_string(trim($_POST['sender_first_name']));
     $senderLName = $conn->real_escape_string(trim($_POST['sender_last_name']));
@@ -55,7 +48,10 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
     $rcptProv  = $conn->real_escape_string(trim($_POST['rcpt_province']));
     $rcptCity  = $conn->real_escape_string(trim($_POST['rcpt_city']));
     $rcptBrgy  = $conn->real_escape_string(trim($_POST['rcpt_barangay']));
-    $rcptAddr  = $rcptBrgy . ', ' . $rcptCity . ', ' . $rcptProv;
+    $rcptZip   = $conn->real_escape_string(trim($_POST['rcpt_zip'] ?? ''));
+    $rcptStreet = $conn->real_escape_string(trim($_POST['rcpt_street']));
+    
+    $rcptAddr  = $rcptStreet . ', ' . $rcptBrgy . ', ' . $rcptCity . ', ' . $rcptProv . ' ' . $rcptZip;
 
     // Auto-map Province to Area for recipient
     $visayas_provinces = ['Aklan', 'Antique', 'Bohol', 'Capiz', 'Cebu', 'Guimaras', 'Iloilo', 'Leyte', 'Biliran', 'Eastern Samar', 'Northern Samar', 'Samar', 'Southern Leyte', 'Siquijor', 'Negros Oriental', 'Negros Occidental'];
@@ -92,14 +88,14 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $eu = $existUser->fetch_assoc();
                 $shprId = $eu['Shpr_ID'];
                 if(!$shprId) {
-                    $shprId = 'SHP' . strtoupper(substr(md5(uniqid()), 0, 5));
+                    $shprId = 'SHP' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
                     $conn->query("INSERT INTO SHIPPER (Shpr_ID, Shpr_UsrID, Shpr_BizName, Shpr_PickAddr) VALUES ('$shprId', '{$eu['Usr_ID']}', '$senderName', '{$hub['Hub_Addr']}')");
                 }
             } else {
-                $usrId = 'USR' . strtoupper(substr(md5(uniqid()), 0, 5));
+                $usrId = 'USR' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
                 $hash = password_hash('ninja123', PASSWORD_DEFAULT);
                 $conn->query("INSERT INTO USER_ACCOUNT (Usr_ID, Usr_Email, Usr_Pass, Usr_Name, Usr_Phone, Usr_Type, Usr_Status, Usr_DateReg) VALUES ('$usrId', '$senderEmail', '$hash', '$senderName', '$senderPhone', 'shipper', 'Active', NOW())");
-                $shprId = 'SHP' . strtoupper(substr(md5(uniqid()), 0, 5));
+                $shprId = 'SHP' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 5));
                 $conn->query("INSERT INTO SHIPPER (Shpr_ID, Shpr_UsrID, Shpr_BizName, Shpr_PickAddr) VALUES ('$shprId', '$usrId', '$senderName', '{$hub['Hub_Addr']}')");
             }
 
@@ -111,13 +107,13 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pclId = generateId($conn, 'PCL', 'PARCEL', 'Pcl_ID');
             $conn->query("INSERT INTO PARCEL (Pcl_ID, Pcl_ShprID, Pcl_RcptID, Pcl_Wght, Pcl_DeclVal, Pcl_IsCOD, Pcl_CODAmt, Pcl_BookDt, Pcl_ProbFlg) VALUES ('$pclId', '$shprId', '$rcptId', $weight, $declVal, '$isCOD', $codAmt, NOW(), 0)");
 
-            // Order - Walk-in is Dropoff, so starts as Staging
+            // Order - Walk-in is Dropoff, so starts as Order Created
             $ordId = generateId($conn, 'ORD', '`ORDER`', 'Ord_ID');
-            $conn->query("INSERT INTO `ORDER` (Ord_ID, Ord_PclID, Ord_SvcID, Ord_ShprID, Ord_Status, Ord_PickPref, Ord_CrtdDt) VALUES ('$ordId', '$pclId', '$svcId', '$shprId', 'Staging', 'Dropoff', NOW())");
+            $conn->query("INSERT INTO `ORDER` (Ord_ID, Ord_PclID, Ord_SvcID, Ord_ShprID, Ord_Status, Ord_PickPref, Ord_CrtdDt) VALUES ('$ordId', '$pclId', '$svcId', '$shprId', 'Order Created', 'Dropoff', NOW())");
 
             // Airway Bill
             $awbId = generateId($conn, 'AWB', 'AIRWAY_BILL', 'AWB_ID');
-            $trkNum = 'NVPH' . strtoupper(substr(md5(uniqid()), 0, 8));
+            $trkNum = 'NVPH' . strtoupper(bin2hex(random_bytes(4)));
             $conn->query("INSERT INTO AIRWAY_BILL (AWB_ID, AWB_OrdID, AWB_TrkNum, AWB_PrtDt, AWB_PrtFmt, AWB_BrCode) VALUES ('$awbId', '$ordId', '$trkNum', NOW(), 'Thermal', '$trkNum')");
 
             // Shipping Fee
@@ -153,6 +149,7 @@ include "../layout/dashboard_layout.php";
 <?php endif; ?>
 
 <form method="POST" class="row g-4">
+    <?= csrf_field() ?>
     <div class="col-lg-7">
         <!-- Sender -->
         <div class="nv-card p-4 mb-4">
@@ -173,6 +170,7 @@ include "../layout/dashboard_layout.php";
                 <div class="col-md-6"><div class="nv-form-group"><label>Last Name *</label><input type="text" name="rcpt_last_name" class="nv-input" required placeholder="e.g. Santos"></div></div>
                 <div class="col-md-6"><div class="nv-form-group"><label>Phone *</label><input type="text" name="rcpt_phone" class="nv-input" required placeholder="09xxxxxxxxx"></div></div>
                 <div class="col-md-6">
+                <div class="col-md-8">
                     <div class="nv-form-group">
                         <label>Province *</label>
                         <select name="rcpt_province" id="rcptProvince" class="nv-input" required>
@@ -186,6 +184,12 @@ include "../layout/dashboard_layout.php";
                         </select>
                     </div>
                 </div>
+                <div class="col-md-4">
+                    <div class="nv-form-group">
+                        <label>ZIP Code</label>
+                        <input type="text" name="rcpt_zip" id="bookZip" class="nv-input" placeholder="e.g. 6000" maxlength="4">
+                    </div>
+                </div>
                 <div class="col-md-6">
                     <div class="nv-form-group">
                         <label>City / Municipality *</label>
@@ -196,10 +200,16 @@ include "../layout/dashboard_layout.php";
                 </div>
                 <div class="col-md-6">
                     <div class="nv-form-group">
-                        <label>Street / Barangay *</label>
+                        <label>Barangay *</label>
                         <select name="rcpt_barangay" id="rcptBarangay" class="nv-input" required>
                             <option value="">Select Barangay</option>
                         </select>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <div class="nv-form-group">
+                        <label>Street / Building / House No. *</label>
+                        <input type="text" name="rcpt_street" class="nv-input" required placeholder="e.g. 123 Main St, Block 4 Lot 5">
                     </div>
                 </div>
             </div>

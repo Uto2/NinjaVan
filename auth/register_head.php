@@ -190,6 +190,24 @@
         .nv-field:focus { border-bottom-color: var(--nv-red); }
         .nv-field-wrap { position: relative; }
         .nv-field-wrap .nv-field { padding-right: 36px; }
+
+        /* ===== PHONE PREFIX ===== */
+        .nv-prefix-wrap {
+            display: flex; align-items: center;
+            border-bottom: 2px solid var(--nv-border);
+            transition: border-color 0.2s;
+        }
+        .nv-prefix-wrap:focus-within { border-bottom-color: var(--nv-red); }
+        .nv-field-prefix {
+            color: var(--nv-muted); font-size: 15px; font-weight: 600;
+            margin-right: 6px; user-select: none;
+        }
+        .nv-prefix-wrap .nv-field {
+            border-bottom: none; padding-left: 0; padding-right: 0;
+            flex: 1;
+        }
+        .nv-prefix-wrap .nv-field:focus { border-bottom-color: transparent; }
+
         .toggle-pw {
             position: absolute; right: 0; top: 50%;
             transform: translateY(-50%);

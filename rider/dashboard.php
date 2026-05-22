@@ -17,7 +17,7 @@ $assigned  = $conn->query("
     FROM DELIVERY_ATTEMPT da
     JOIN SHIPMENT s ON da.Atmp_ShpmID = s.Shpm_ID
     WHERE da.Atmp_RdrID = '$riderId'
-    AND s.Shpm_Status IN ('Pending Pickup','In Transit','Out for Delivery')
+    AND s.Shpm_Status IN ('Pickup / Drop-off','Out for Delivery')
 ")->fetch_assoc()['c'];
 
 // Completed deliveries
@@ -53,7 +53,7 @@ $today = $conn->query("
     JOIN RECIPIENT r ON p.Pcl_RcptID = r.Rcpt_ID
     LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
     WHERE da.Atmp_RdrID = '$riderId'
-    AND s.Shpm_Status IN ('Pending Pickup','In Transit','Out for Delivery')
+    AND s.Shpm_Status IN ('Pickup / Drop-off','Out for Delivery')
     ORDER BY da.Atmp_Date DESC
     LIMIT 5
 ");
@@ -141,8 +141,8 @@ include "../layout/dashboard_layout.php";
                             <td><?php
                                 $s = $r['Shpm_Status'];
                                 $map = [
-                                    'Pending Pickup'=>'badge-confirmed',
-                                    'In Transit'=>'badge-transit',
+                                    'Pickup / Drop-off'=>'badge-confirmed',
+                                    'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit',
                                     'Out for Delivery'=>'badge-delivery',
                                     'Delivered'=>'badge-delivered',
                                     'Failed'=>'badge-failed',
@@ -166,8 +166,8 @@ include "../layout/dashboard_layout.php";
 
             <?php
             $steps = [
-                ['Pending Pickup',   'badge-confirmed', 'Pending Pickup',   'Parcel confirmed, ready for pickup'],
-                ['In Transit',       'badge-transit',   'In Transit',       'Parcel on the way to destination'],
+                ['Pickup / Drop-off',   'badge-confirmed', 'Pickup / Drop-off',   'Parcel confirmed, ready for pickup'],
+                ['Origin Sorting Hub',       'badge-transit',   'Hub Processing',       'Parcel is being processed at hubs'],
                 ['Out for Delivery', 'badge-delivery',  'Out for Delivery', 'Last mile — delivering now'],
                 ['Delivered',        'badge-delivered', 'Delivered',        'Successfully handed to recipient'],
             ];

@@ -1078,7 +1078,7 @@ $activePage = $activePage               ?? '';
             Orders
             <?php
             if(isset($conn)){
-                $ures = $conn->query("SELECT COUNT(*) as c FROM `ORDER` WHERE Ord_Status='Staging'");
+                $ures = $conn->query("SELECT COUNT(*) as c FROM `ORDER` WHERE Ord_Status='Order Created'");
                 $ucnt = $ures ? ($ures->fetch_assoc()['c'] ?? 0) : 0;
                 if($ucnt > 0) echo "<span class='sb-badge'>$ucnt</span>";
             }
@@ -1195,7 +1195,7 @@ $activePage = $activePage               ?? '';
             <?php
             if(isset($conn) && isset($_SESSION['rider_id'])){
                 $rid = $_SESSION['rider_id'];
-                $pr = $conn->query("SELECT COUNT(*) as c FROM DELIVERY_ATTEMPT da JOIN SHIPMENT s ON da.Atmp_ShpmID=s.Shpm_ID WHERE da.Atmp_RdrID='$rid' AND s.Shpm_Status IN ('Pending Pickup','In Transit','Out for Delivery')");
+                $pr = $conn->query("SELECT COUNT(*) as c FROM DELIVERY_ATTEMPT da JOIN SHIPMENT s ON da.Atmp_ShpmID=s.Shpm_ID WHERE da.Atmp_RdrID='$rid' AND s.Shpm_Status IN ('Pickup / Drop-off','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')");
                 $pc = $pr ? ($pr->fetch_assoc()['c'] ?? 0) : 0;
                 if($pc > 0) echo "<span class='sb-badge'>$pc</span>";
             }

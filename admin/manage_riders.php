@@ -11,24 +11,38 @@ $activePage = "riders";
 
 // Handle status toggle
 if(isset($_POST['toggle_status'])){
-    $rdrId = $conn->real_escape_string($_POST['rdr_id']);
-    $newSt = $conn->real_escape_string($_POST['new_status']);
-    $conn->query("UPDATE RIDER SET Rdr_Status='$newSt' WHERE Rdr_ID='$rdrId'");
+    csrf_verify();
+    $rdrId = $_POST['rdr_id'];
+    $newSt = $_POST['new_status'];
+    // Whitelist valid statuses to prevent injection through enum bypass
+    if(!in_array($newSt, ['Active','Inactive'])) {
+        header("Location: manage_riders.php"); exit();
+    }
+    $stmt = $conn->prepare("UPDATE RIDER SET Rdr_Status = ? WHERE Rdr_ID = ?");
+    $stmt->bind_param('ss', $newSt, $rdrId);
+    $stmt->execute();
+    $stmt->close();
     $_SESSION['toast_success'] = "Rider status updated!";
     header("Location: manage_riders.php"); exit();
 }
 
 // Handle hub reassignment
 if(isset($_POST['reassign_hub'])){
-    $rdrId = $conn->real_escape_string($_POST['rdr_id']);
-    $hubId = $conn->real_escape_string($_POST['hub_id']);
-    $conn->query("UPDATE RIDER SET Rdr_HubID='$hubId' WHERE Rdr_ID='$rdrId'");
+    csrf_verify();
+    $rdrId = $_POST['rdr_id'];
+    $hubId = $_POST['hub_id'];
+    $stmt = $conn->prepare("UPDATE RIDER SET Rdr_HubID = ? WHERE Rdr_ID = ?");
+    $stmt->bind_param('ss', $hubId, $rdrId);
+    $stmt->execute();
+    $stmt->close();
     $_SESSION['toast_success'] = "Rider hub reassigned!";
     header("Location: manage_riders.php"); exit();
 }
 
 $filterStatus = $_GET['status'] ?? '';
-$where = $filterStatus ? "WHERE r.Rdr_Status='$filterStatus'" : "";
+// Whitelist filter status to prevent injection in the SELECT WHERE clause
+if(!in_array($filterStatus, ['', 'Active', 'Inactive'])) $filterStatus = '';
+$where = $filterStatus ? "WHERE r.Rdr_Status='" . $conn->real_escape_string($filterStatus) . "'" : "";
 
 $riders = $conn->query("
     SELECT r.*, h.Hub_Name, h.Hub_Area,
@@ -105,6 +119,7 @@ include "../layout/dashboard_layout.php";
                 <td>
                     <div style="display:flex;gap:4px;">
                         <form method="POST" style="display:inline;">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="rdr_id" value="<?= $r['Rdr_ID'] ?>">
                             <input type="hidden" name="new_status" value="<?= $r['Rdr_Status']==='Active'?'Inactive':'Active' ?>">
                             <button type="submit" name="toggle_status" class="btn-icon" title="<?= $r['Rdr_Status']==='Active'?'Deactivate':'Activate' ?>">

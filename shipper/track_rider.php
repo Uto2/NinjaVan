@@ -1,4 +1,7 @@
 <?php
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Cache-Control: post-check=0, pre-check=0", false);
+header("Pragma: no-cache");
 session_start();
 require_once "../config/db.php";
 
@@ -18,12 +21,7 @@ $riderGPS  = null;
 $timeline  = [];
 $hubCoords = null;
 
-// Branch hub coordinates — kept in sync with live_map.php and migrate_hub_gps.php
-$HUB_COORDS = [
-    'Cebu'   => ['lat' => 10.3157, 'lng' => 123.8854, 'name' => 'Cebu Hub'],
-    'Manila' => ['lat' => 14.5995, 'lng' => 120.9842, 'name' => 'Manila Hub'],
-    'Davao'  => ['lat' =>  7.1907, 'lng' => 125.4553, 'name' => 'Davao Hub'],
-];
+// Branch hub coordinates are now fetched dynamically from the DB query
 
 if ($trk) {
     // Look up the order — must belong to this shipper
@@ -34,7 +32,7 @@ if ($trk) {
                sv.Svc_Name,
                aw.AWB_TrkNum,
                sh.Shpm_ID, sh.Shpm_Status, sh.Shpm_PickDt, sh.Shpm_DlvDt, sh.Shpm_AtmCnt,
-               h.Hub_Area, h.Hub_Name
+               h.Hub_ID, h.Hub_Area, h.Hub_Name, h.Hub_Lat, h.Hub_Lng
         FROM AIRWAY_BILL aw
         JOIN `ORDER` o       ON aw.AWB_OrdID    = o.Ord_ID
         JOIN SHIPPER s       ON o.Ord_ShprID     = s.Shpr_ID
@@ -85,86 +83,173 @@ if ($trk) {
             ];
         }
 
-        // Resolve hub coordinates
-        $hubArea = $order['Hub_Area'] ?? '';
-        foreach ($HUB_COORDS as $key => $coords) {
-            if (stripos($hubArea, $key) !== false) {
-                $hubCoords = $coords;
-                break;
-            }
+        // Resolve hub coordinates dynamically from DB
+        $lat = $order['Hub_Lat'] ? (float)$order['Hub_Lat'] : null;
+        $lng = $order['Hub_Lng'] ? (float)$order['Hub_Lng'] : null;
+        
+        if (!$lat || !$lng) {
+            $harea = strtolower($order['Hub_Area'] ?? '');
+            if (str_contains($harea, 'cebu') || str_contains($harea, 'visayas')) { $lat=10.3157; $lng=123.8854; }
+            elseif (str_contains($harea, 'davao') || str_contains($harea, 'mindanao')) { $lat=7.1907; $lng=125.4553; }
+            else { $lat=14.5995; $lng=120.9842; } // Manila default
         }
-        // Default to Manila if hub not matched
-        if (!$hubCoords) $hubCoords = $HUB_COORDS['Manila'];
+        
+        $hubCoords = [
+            'id'   => $order['Hub_ID'] ?? '',
+            'lat'  => $lat,
+            'lng'  => $lng,
+            'name' => $order['Hub_Name'] ?? 'NinjaVan Hub'
+        ];
 
         // Build timeline
+        $currStatus = $order['Ord_Status'];
+        $statusOrder = [
+            'Order Created' => 0,
+            'Pickup / Drop-off' => 1,
+            'Origin Sorting Hub' => 2,
+            'Main Sorting Hub' => 3,
+            'Regional Hub' => 4,
+            'Destination Hub' => 5,
+            'Out for Delivery' => 6,
+            'Delivered' => 7,
+            'RTS' => 8
+        ];
+        $currIdx = $statusOrder[$currStatus] ?? 0;
+        $baseDate = strtotime($order['Ord_CrtdDt']);
+
+        // 1. Order Created
         $timeline[] = [
-            'date'  => $order['Ord_CrtdDt'],
-            'title' => 'Order placed',
+            'date'  => date('Y-m-d H:i:s', $baseDate),
+            'title' => 'Order Created',
             'desc'  => 'Parcel booked and received by NinjaVan.',
             'icon'  => 'bi-file-earmark-check-fill',
             'done'  => true,
             'color' => null,
         ];
 
-        if ($order['Ord_Status'] !== 'Staging') {
+        // 2. Pickup
+        if($currIdx >= 1) {
+            $date = $order['Shpm_PickDt'] ?: date('Y-m-d H:i:s', $baseDate + 3600);
             $timeline[] = [
-                'date'  => $order['Shpm_PickDt'] ?? $order['Ord_CrtdDt'],
-                'title' => 'Picked up',
-                'desc'  => 'Parcel collected and in hub.',
-                'icon'  => 'bi-box-seam-fill',
-                'done'  => !empty($order['Shpm_PickDt']),
+                'date' => $date,
+                'title' => 'Pickup / Drop-off',
+                'desc' => 'Parcel handed over to Ninja Van.',
+                'icon' => 'bi-box-seam-fill',
+                'done' => true,
                 'color' => null,
             ];
         }
 
-        // Delivery attempts
-        $aStmt = $conn->prepare("
-            SELECT da.Atmp_Date, da.Atmp_Rslt, da.Atmp_Sign, da.Atmp_FailRsn, rd.Rdr_Name
-            FROM DELIVERY_ATTEMPT da
-            JOIN RIDER rd ON da.Atmp_RdrID = rd.Rdr_ID
-            WHERE da.Atmp_ShpmID = ?
-            ORDER BY da.Atmp_Date ASC
-        ");
-        $aStmt->bind_param('s', $order['Shpm_ID']);
-        $aStmt->execute();
-        $attempts = $aStmt->get_result();
-        $aStmt->close();
+        // 3. Origin Sorting Hub
+        if($currIdx >= 2) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 7200),
+                'title' => 'Origin Sorting Hub',
+                'desc' => 'Parcel received at origin facility, scanned and sorted.',
+                'icon' => 'bi-building',
+                'done' => $currIdx > 2,
+                'color' => null,
+            ];
+        }
 
-        while ($att = $attempts->fetch_assoc()) {
-            if ($att['Atmp_Rslt'] === 'Successful') {
+        // 4. Main Sorting Hub
+        if($currIdx >= 3) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 86400),
+                'title' => 'Main Sorting Hub',
+                'desc' => 'Parcel arrived at the central sorting facility.',
+                'icon' => 'bi-diagram-3',
+                'done' => $currIdx > 3,
+                'color' => null,
+            ];
+        }
+
+        // 5. Regional Hub
+        if($currIdx >= 4) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 172800),
+                'title' => 'Regional Hub',
+                'desc' => 'Parcel transported to the regional distribution center.',
+                'icon' => 'bi-geo-alt',
+                'done' => $currIdx > 4,
+                'color' => null,
+            ];
+        }
+
+        // 6. Destination Hub
+        if($currIdx >= 5) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 200000),
+                'title' => 'Destination Hub',
+                'desc' => 'Parcel received at the final branch responsible for delivery.',
+                'icon' => 'bi-house-door',
+                'done' => $currIdx > 5,
+                'color' => null,
+            ];
+        }
+
+        // 7. Delivery attempts
+        if($currIdx >= 6) {
+            $aStmt = $conn->prepare("
+                SELECT da.Atmp_Date, da.Atmp_Rslt, da.Atmp_Sign, da.Atmp_FailRsn, rd.Rdr_Name
+                FROM DELIVERY_ATTEMPT da
+                JOIN RIDER rd ON da.Atmp_RdrID = rd.Rdr_ID
+                WHERE da.Atmp_ShpmID = ?
+                ORDER BY da.Atmp_Date ASC
+            ");
+            $aStmt->bind_param('s', $order['Shpm_ID']);
+            $aStmt->execute();
+            $attempts = $aStmt->get_result();
+            $aStmt->close();
+
+            $hasPending = false;
+            while ($att = $attempts->fetch_assoc()) {
+                if ($att['Atmp_Rslt'] === 'Successful') {
+                    $timeline[] = [
+                        'date'  => $att['Atmp_Date'],
+                        'title' => 'Delivered',
+                        'desc'  => 'Received by ' . htmlspecialchars($att['Atmp_Sign'] ?? '—')
+                                 . ' · Rider: ' . htmlspecialchars($att['Rdr_Name']),
+                        'icon'  => 'bi-check-circle-fill',
+                        'done'  => true,
+                        'color' => 'var(--green)',
+                    ];
+                } elseif ($att['Atmp_Rslt'] === 'Failed') {
+                    $timeline[] = [
+                        'date'  => $att['Atmp_Date'],
+                        'title' => 'Delivery attempt failed',
+                        'desc'  => htmlspecialchars($att['Atmp_FailRsn'] ?? 'No reason given')
+                                 . ' · Rider: ' . htmlspecialchars($att['Rdr_Name']),
+                        'icon'  => 'bi-x-circle-fill',
+                        'done'  => true,
+                        'color' => '#dc2626',
+                    ];
+                } elseif($att['Atmp_Rslt'] === 'Pending') {
+                    $hasPending = true;
+                }
+            }
+
+            // Active out-for-delivery step
+            if ($currIdx === 6 || $hasPending) {
                 $timeline[] = [
-                    'date'  => $att['Atmp_Date'],
-                    'title' => 'Delivered',
-                    'desc'  => 'Received by ' . htmlspecialchars($att['Atmp_Sign'] ?? '—')
-                             . ' · Rider: ' . htmlspecialchars($att['Rdr_Name']),
-                    'icon'  => 'bi-check-circle-fill',
-                    'done'  => true,
-                    'color' => 'var(--green)',
-                ];
-            } elseif ($att['Atmp_Rslt'] === 'Failed') {
-                $timeline[] = [
-                    'date'  => $att['Atmp_Date'],
-                    'title' => 'Delivery attempt failed',
-                    'desc'  => htmlspecialchars($att['Atmp_FailRsn'] ?? 'No reason given')
-                             . ' · Rider: ' . htmlspecialchars($att['Rdr_Name']),
-                    'icon'  => 'bi-x-circle-fill',
-                    'done'  => true,
-                    'color' => '#dc2626',
+                    'date'  => date('Y-m-d H:i:s'),
+                    'title' => 'Out for Delivery',
+                    'desc'  => 'Rider is on the way to your recipient now.',
+                    'icon'  => 'bi-truck',
+                    'done'  => false,
+                    'color' => 'var(--blue)',
                 ];
             }
         }
-
-        // Active in-transit / out-for-delivery step
-        if (in_array($order['Shpm_Status'], ['In Transit', 'Out for Delivery'])) {
-            $timeline[] = [
-                'date'  => date('Y-m-d H:i:s'),
-                'title' => $order['Shpm_Status'],
-                'desc'  => $order['Shpm_Status'] === 'Out for Delivery'
-                         ? 'Rider is on the way to your recipient now.'
-                         : 'Parcel is in transit to the delivery area.',
-                'icon'  => 'bi-truck',
-                'done'  => false,
-                'color' => 'var(--blue)',
+        
+        if($currIdx === 8) {
+             $timeline[] = [
+                'date' => date('Y-m-d H:i:s'),
+                'title' => 'Return to Sender (RTS)',
+                'desc' => 'Parcel is being returned to the sender.',
+                'icon' => 'bi-arrow-return-left',
+                'done' => true,
+                'color' => 'var(--red)'
             ];
         }
 
@@ -180,7 +265,7 @@ $activeOrders = $conn->query("
     JOIN RECIPIENT rc  ON p.Pcl_RcptID  = rc.Rcpt_ID
     LEFT JOIN AIRWAY_BILL aw ON aw.AWB_OrdID = o.Ord_ID
     WHERE o.Ord_ShprID = '$shipperId'
-      AND o.Ord_Status IN ('Pending Pickup','In Transit','Out for Delivery')
+      AND o.Ord_Status IN ('Pickup / Drop-off','Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery')
     ORDER BY o.Ord_CrtdDt DESC
     LIMIT 10
 ");
@@ -393,7 +478,7 @@ include "../layout/dashboard_layout.php";
         <h1><i class="bi bi-geo-alt-fill" style="color:var(--red);"></i> Track My Rider</h1>
         <p>See exactly where your rider is during delivery</p>
     </div>
-    <?php if ($order && in_array($order['Ord_Status'], ['In Transit','Out for Delivery'])): ?>
+    <?php if ($order && in_array($order['Ord_Status'], ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery'])): ?>
     <div class="eta-pill">
         <i class="bi bi-clock"></i>
         <span id="etaLabel">Calculating ETA...</span>
@@ -465,15 +550,15 @@ include "../layout/dashboard_layout.php";
 <?php else:
     $s      = $order['Ord_Status'];
     $badgeMap = [
-        'Staging'          => 'badge-pending',
-        'Pending Pickup'   => 'badge-confirmed',
-        'In Transit'       => 'badge-transit',
+        'Order Created'          => 'badge-pending',
+        'Pickup / Drop-off'   => 'badge-confirmed',
+        'Origin Sorting Hub' => 'badge-transit','Main Sorting Hub' => 'badge-transit','Regional Hub' => 'badge-transit','Destination Hub' => 'badge-transit',
         'Out for Delivery' => 'badge-delivery',
         'Delivered'        => 'badge-delivered',
         'RTS'              => 'badge-failed',
     ];
     $badgeCls = $badgeMap[$s] ?? 'badge-pending';
-    $isLive   = in_array($s, ['In Transit', 'Out for Delivery']);
+    $isLive   = in_array($s, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub','Out for Delivery']);
     $isOFD    = $s === 'Out for Delivery';
 ?>
 
@@ -753,17 +838,61 @@ let destMarker  = null;
 let simInterval = null;
 
 // ── Route + destination drawing ────────────────────
-function drawRoute(rLat, rLng) {
-    // If we have a destination, draw the dashed route line
-    if (destMarker) map.removeLayer(destMarker);
-    if (routeLine)  map.removeLayer(routeLine);
+async function loadAndDrawRoute() {
+    if (!IS_LIVE) return;
 
-    // Draw hub→rider path (solid grey, faint)
-    if (IS_OFD) {
-        // Route: rider → destination area (approximate hub as dest since no geocoded addr)
-        routeLine = L.polyline([[rLat, rLng], [HUB.lat, HUB.lng]], {
-            color: '#3b82f6', weight: 3, dashArray: '8, 8', opacity: 0.5,
-        }).addTo(map);
+    try {
+        const res = await fetch(`/ninjavan/api/geocode_area.php?area=${encodeURIComponent(RCPT_AREA)}&hub_id=${encodeURIComponent(HUB.id || HUB.name)}&seed=${encodeURIComponent(TRK)}&addr=${encodeURIComponent(RCPT_ADDR)}&_=${Date.now()}`);
+        const geo = await res.json();
+        
+        const dLat = geo.lat;
+        const dLng = geo.lng;
+
+        // Fictional simulation state variables
+        const steps  = geo.waypoints.length || 40;
+        let   step   = 0;
+        const status = 'idle';
+
+        // Add destination marker
+        if (destMarker) map.removeLayer(destMarker);
+        destMarker = L.marker([dLat, dLng], { icon: destIcon })
+            .addTo(map)
+            .bindPopup(`<div style="padding:4px;min-width:140px;">
+                <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:13px;">📦 Delivery destination</div>
+                <div style="font-size:12px;color:#666;margin-bottom:6px;">${geo.zone}</div>
+                <div style="font-size:11px;color:#000;">Rider: ${RIDER_NAME || 'Your Rider'}</div>
+                <div style="font-size:11px;color:#e8002d;font-weight:600;">Status: ${ORDER_STATUS}</div>
+            </div>`);
+
+        // Route line: from OSRM waypoints
+        const rCoords = geo.waypoints.map(w => [w[0], w[1]]);
+        if (routeLine) map.removeLayer(routeLine);
+        
+        if (IS_OFD) {
+            routeLine = L.polyline(rCoords, {
+                color: '#3b82f6', weight: 4, dashArray: '10,10', opacity: 0.8,
+            }).addTo(map);
+        }
+
+        // Fit map bounds to show route
+        map.fitBounds([[HUB.lat, HUB.lng], [dLat, dLng]], { padding: [40, 40] });
+
+        // If rider has no GPS, simulate along the OSRM route!
+        if (!RIDER_GPS) {
+            placeRider(HUB.lat, HUB.lng, status, RIDER_NAME || 'Your Rider',
+                '<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding-top:5px;border-top:1px solid #eee;">⚡ Simulated — waiting for real GPS</div>');
+
+            simInterval = setInterval(() => {
+                if (step >= geo.waypoints.length) { clearInterval(simInterval); return; }
+                const w = geo.waypoints[step];
+                placeRider(w[0], w[1], status, RIDER_NAME || 'Your Rider',
+                    '<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding-top:5px;border-top:1px solid #eee;">⚡ Simulated — waiting for real GPS</div>');
+                step += 3; // speed up slightly
+            }, 1000);
+        }
+
+    } catch(e) {
+        console.warn('Geocode routing failed', e);
     }
 }
 
@@ -786,52 +915,6 @@ function placeRider(lat, lng, status, name, popupExtra) {
     } else {
         riderMarker = L.marker([lat, lng], { icon }).addTo(map).bindPopup(popup, { maxWidth: 220 });
     }
-    drawRoute(lat, lng);
-}
-
-// ── Simulated route animation ──────────────────────
-// When no real GPS: animate rider from hub toward a fictional
-// delivery point (offset from hub to represent the recipient area)
-function startSimulation() {
-    if (!IS_LIVE) return;
-
-    // Fictional destination: shift hub coords ~2km toward center PH
-    const destLat = HUB.lat + (Math.random() * 0.02 - 0.005);
-    const destLng = HUB.lng + (Math.random() * 0.02 + 0.005);
-    const steps   = 40;
-    let   step    = 0;
-    const status  = 'idle'; // simulated = idle color
-
-    // Add destination marker
-    destMarker = L.marker([destLat, destLng], { icon: destIcon })
-        .addTo(map)
-        .bindPopup(`<div style="padding:4px;min-width:140px;">
-            <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:13px;">📦 Delivery point</div>
-            <div style="font-size:12px;color:#666;">${RCPT_AREA}</div>
-        </div>`);
-
-    // Route line: hub → dest
-    routeLine = L.polyline([[HUB.lat, HUB.lng], [destLat, destLng]], {
-        color: '#3b82f6', weight: 3, dashArray: '8,8', opacity: 0.45,
-    }).addTo(map);
-
-    // Fit map to show both hub and dest
-    map.fitBounds([[HUB.lat, HUB.lng], [destLat, destLng]], { padding: [40, 40] });
-
-    // Initial rider position = hub
-    placeRider(HUB.lat, HUB.lng, status, RIDER_NAME || 'Your Rider',
-        '<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding-top:5px;border-top:1px solid #eee;">⚡ Simulated — waiting for real GPS</div>');
-
-    simInterval = setInterval(() => {
-        if (step >= steps) { clearInterval(simInterval); return; }
-        const t   = step / steps;
-        const lat = HUB.lat + (destLat - HUB.lat) * t;
-        const lng = HUB.lng + (destLng - HUB.lng) * t
-                  + Math.sin(step * 0.5) * 0.0008; // slight wobble for realism
-        placeRider(lat, lng, status, RIDER_NAME || 'Your Rider',
-            '<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding-top:5px;border-top:1px solid #eee;">⚡ Simulated — waiting for real GPS</div>');
-        step++;
-    }, 1800);
 }
 
 // ── ETA calculation (straight-line distance / avg speed) ──
@@ -850,15 +933,21 @@ function calcETA(rLat, rLng, dLat, dLng) {
     else                el.textContent = `~${Math.round(mins/60)}h ${mins%60}m away`;
 }
 
-// ── Main: place real GPS or start simulation ───────
-if (RIDER_GPS && IS_LIVE) {
-    placeRider(RIDER_GPS.lat, RIDER_GPS.lng, RIDER_GPS.status, RIDER_NAME, '');
-    map.setView([RIDER_GPS.lat, RIDER_GPS.lng], 14);
-    calcETA(RIDER_GPS.lat, RIDER_GPS.lng, HUB.lat, HUB.lng);
-} else if (IS_LIVE && !RIDER_GPS) {
-    startSimulation();
-    const etaEl = document.getElementById('etaLabel');
-    if (etaEl) etaEl.textContent = 'GPS signal pending...';
+// ── Main: Setup Map ───────
+if (IS_LIVE) {
+    // 1. Fetch OSRM route, place destination, and draw line.
+    // If no GPS, this also starts the simulation.
+    loadAndDrawRoute();
+    
+    // 2. If real GPS exists, place the rider immediately
+    if (RIDER_GPS) {
+        placeRider(RIDER_GPS.lat, RIDER_GPS.lng, RIDER_GPS.status, RIDER_NAME, '');
+        map.setView([RIDER_GPS.lat, RIDER_GPS.lng], 14);
+        calcETA(RIDER_GPS.lat, RIDER_GPS.lng, HUB.lat, HUB.lng);
+    } else {
+        const etaEl = document.getElementById('etaLabel');
+        if (etaEl) etaEl.textContent = 'GPS signal pending...';
+    }
 } else {
     // Not yet live — just show hub pin, fit map
     map.setView([HUB.lat, HUB.lng], 13);

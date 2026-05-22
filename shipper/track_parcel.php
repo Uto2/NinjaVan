@@ -15,9 +15,6 @@ $order = null;
 $timeline = [];
 
 if($trk) {
-    // Look up the order using the tracking number AND ensuring it belongs to this shipper
-    // (Or allow tracking any parcel if they have the number? Standard is usually public tracking, but here we restrict to their own for privacy, or allow all since they have the AWB)
-    // Let's allow tracking if they have the exact number, but flag if it's theirs.
     $q = $conn->query("
         SELECT o.*, p.Pcl_Wght, aw.AWB_TrkNum, 
                r.Rcpt_Name, r.Rcpt_Area, r.Rcpt_Addr,
@@ -34,31 +31,90 @@ if($trk) {
     
     if($q && $q->num_rows > 0) {
         $order = $q->fetch_assoc();
+        $currStatus = $order['Ord_Status'];
         
-        // Build Timeline Array
+        $statusOrder = [
+            'Order Created' => 0,
+            'Pickup / Drop-off' => 1,
+            'Origin Sorting Hub' => 2,
+            'Main Sorting Hub' => 3,
+            'Regional Hub' => 4,
+            'Destination Hub' => 5,
+            'Out for Delivery' => 6,
+            'Delivered' => 7,
+            'RTS' => 8
+        ];
+        $currIdx = $statusOrder[$currStatus] ?? 0;
+        
+        $baseDate = strtotime($order['Ord_CrtdDt']);
+        
         // 1. Order Created
         $timeline[] = [
-            'date' => $order['Ord_CrtdDt'],
+            'date' => date('Y-m-d H:i:s', $baseDate),
             'title' => 'Order Created',
-            'desc' => 'Parcel booked and data received.',
+            'desc' => 'Parcel booked by sender.',
             'icon' => 'bi-file-earmark-check',
             'done' => true
         ];
         
-        // 2. Pickup / Dropoff
-        if($order['Ord_Status'] !== 'Staging') {
-             $isDone = !empty($order['Shpm_PickDt']);
-             $timeline[] = [
-                'date' => $order['Shpm_PickDt'] ?? $order['Ord_CrtdDt'], // Approximate if not picked up yet
-                'title' => 'Parcel Picked Up',
-                'desc' => 'Parcel has been handed over to NinjaVan.',
+        // 2. Pickup
+        if($currIdx >= 1) {
+            $date = $order['Shpm_PickDt'] ?: date('Y-m-d H:i:s', $baseDate + 3600);
+            $timeline[] = [
+                'date' => $date,
+                'title' => 'Pickup / Drop-off',
+                'desc' => 'Parcel handed over to Ninja Van.',
                 'icon' => 'bi-box-seam',
-                'done' => $isDone
+                'done' => true
             ];
         }
 
-        // 3. Transit & Attempts
-        if($order['Shpm_ID']) {
+        // 3. Origin Sorting Hub
+        if($currIdx >= 2) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 7200),
+                'title' => 'Origin Sorting Hub',
+                'desc' => 'Parcel received at origin facility, scanned and sorted.',
+                'icon' => 'bi-building',
+                'done' => $currIdx > 2
+            ];
+        }
+
+        // 4. Main Sorting Hub
+        if($currIdx >= 3) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 86400),
+                'title' => 'Main Sorting Hub',
+                'desc' => 'Parcel arrived at the central sorting facility.',
+                'icon' => 'bi-diagram-3',
+                'done' => $currIdx > 3
+            ];
+        }
+
+        // 5. Regional Hub
+        if($currIdx >= 4) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 172800),
+                'title' => 'Regional Hub',
+                'desc' => 'Parcel transported to the regional distribution center.',
+                'icon' => 'bi-geo-alt',
+                'done' => $currIdx > 4
+            ];
+        }
+
+        // 6. Destination Hub
+        if($currIdx >= 5) {
+            $timeline[] = [
+                'date' => date('Y-m-d H:i:s', $baseDate + 200000),
+                'title' => 'Destination Hub',
+                'desc' => 'Parcel received at the final branch responsible for delivery.',
+                'icon' => 'bi-house-door',
+                'done' => $currIdx > 5
+            ];
+        }
+
+        // 7. Delivery Attempts & Out for Delivery
+        if($currIdx >= 6 && $order['Shpm_ID']) {
             $attQ = $conn->query("
                 SELECT da.*, rd.Rdr_Name 
                 FROM DELIVERY_ATTEMPT da
@@ -66,6 +122,7 @@ if($trk) {
                 WHERE da.Atmp_ShpmID = '{$order['Shpm_ID']}'
                 ORDER BY da.Atmp_Date ASC
             ");
+            $hasPending = false;
             while($att = $attQ->fetch_assoc()) {
                 if($att['Atmp_Rslt'] === 'Successful') {
                     $timeline[] = [
@@ -85,16 +142,16 @@ if($trk) {
                         'done' => true,
                         'color' => 'var(--red)'
                     ];
+                } elseif($att['Atmp_Rslt'] === 'Pending') {
+                    $hasPending = true;
                 }
-                // Ignore 'Pending' attempts since they represent active Out for Delivery status
             }
             
-            // If currently In Transit or Out for Delivery
-            if(in_array($order['Shpm_Status'], ['In Transit', 'Out for Delivery'])) {
+            if($currIdx === 6 || $hasPending) {
                 $timeline[] = [
                     'date' => date('Y-m-d H:i:s'),
-                    'title' => $order['Shpm_Status'],
-                    'desc' => 'Parcel is currently ' . strtolower($order['Shpm_Status']) . '.',
+                    'title' => 'Out for Delivery',
+                    'desc' => 'Parcel is on its way to you.',
                     'icon' => 'bi-truck',
                     'done' => false,
                     'color' => 'var(--blue)'
@@ -102,6 +159,17 @@ if($trk) {
             }
         }
         
+        if($currIdx === 8) {
+             $timeline[] = [
+                'date' => date('Y-m-d H:i:s'),
+                'title' => 'Return to Sender (RTS)',
+                'desc' => 'Parcel is being returned to the sender.',
+                'icon' => 'bi-arrow-return-left',
+                'done' => true,
+                'color' => 'var(--red)'
+            ];
+        }
+
         // Sort timeline by date
         usort($timeline, function($a, $b) {
             return strtotime($a['date']) - strtotime($b['date']);
@@ -142,12 +210,18 @@ include "../layout/dashboard_layout.php";
         </div>
         <?php else: 
             $s = $order['Ord_Status'];
-            $map = [
-                'Staging'=>'badge-pending','Pending Pickup'=>'badge-confirmed',
-                'In Transit'=>'badge-transit','Out for Delivery'=>'badge-delivery',
-                'Delivered'=>'badge-delivered','RTS'=>'badge-failed'
-            ];
-            $cls = $map[$s] ?? 'badge-pending';
+            $map=[
+                'Order Created'=>'badge-pending',
+                'Pickup / Drop-off'=>'badge-confirmed',
+                'Origin Sorting Hub'=>'badge-transit',
+                'Main Sorting Hub'=>'badge-transit',
+                'Regional Hub'=>'badge-transit',
+                'Destination Hub'=>'badge-transit',
+                'Out for Delivery'=>'badge-delivery',
+                'Delivered'=>'badge-delivered',
+                'RTS'=>'badge-failed'
+            ]; 
+            $cls=$map[$s]??'badge-pending';
         ?>
         
         <!-- Order Summary -->

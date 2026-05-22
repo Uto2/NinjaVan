@@ -34,8 +34,8 @@ $orders = $conn->query("
 
 // Stats for tabs
 $statAll = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId'")->fetch_assoc()['c'];
-$statPending = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status IN ('Staging','Pending Pickup')")->fetch_assoc()['c'];
-$statTransit = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status = 'In Transit'")->fetch_assoc()['c'];
+$statPending = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status IN ('Order Created','Pickup / Drop-off')")->fetch_assoc()['c'];
+$statTransit = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status IN ('Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub')")->fetch_assoc()['c'];
 $statDone = $conn->query("SELECT COUNT(*) c FROM `ORDER` WHERE Ord_ShprID='$shipperId' AND Ord_Status = 'Delivered'")->fetch_assoc()['c'];
 
 include "../layout/dashboard_layout.php";
@@ -56,11 +56,11 @@ include "../layout/dashboard_layout.php";
     <a href="?status=" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='' ? 'var(--red)' : 'var(--muted)' ?>;">
         All Orders <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statAll ?></span>
     </a>
-    <a href="?status=Staging" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='Staging' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='Staging' ? 'var(--red)' : 'var(--muted)' ?>;">
+    <a href="?status=Order Created" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='Order Created' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='Order Created' ? 'var(--red)' : 'var(--muted)' ?>;">
         Pending <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statPending ?></span>
     </a>
-    <a href="?status=In Transit" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='In Transit' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='In Transit' ? 'var(--red)' : 'var(--muted)' ?>;">
-        In Transit <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statTransit ?></span>
+    <a href="?status=Origin Sorting Hub" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= in_array($statusFilter, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub']) ? 'var(--red)' : 'transparent' ?>; color:<?= in_array($statusFilter, ['Origin Sorting Hub','Main Sorting Hub','Regional Hub','Destination Hub']) ? 'var(--red)' : 'var(--muted)' ?>;">
+        In Transit (Hubs) <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statTransit ?></span>
     </a>
     <a href="?status=Delivered" style="text-decoration:none; padding:10px 4px; font-weight:600; font-size:14px; border-bottom:2px solid <?= $statusFilter==='Delivered' ? 'var(--red)' : 'transparent' ?>; color:<?= $statusFilter==='Delivered' ? 'var(--red)' : 'var(--muted)' ?>;">
         Delivered <span style="background:var(--surface); padding:2px 8px; border-radius:20px; font-size:11px; margin-left:4px;"><?= $statDone ?></span>
@@ -80,8 +80,8 @@ include "../layout/dashboard_layout.php";
     <?php else: while($o = $orders->fetch_assoc()): 
         $s = $o['Ord_Status'];
         $map = [
-            'Staging'=>'badge-pending','Pending Pickup'=>'badge-confirmed',
-            'In Transit'=>'badge-transit','Out for Delivery'=>'badge-delivery',
+            'Order Created'=>'badge-pending','Pickup / Drop-off'=>'badge-confirmed',
+            'Origin Sorting Hub'=>'badge-transit','Main Sorting Hub'=>'badge-transit','Regional Hub'=>'badge-transit','Destination Hub'=>'badge-transit','Out for Delivery'=>'badge-delivery',
             'Delivered'=>'badge-delivered','RTS'=>'badge-failed'
         ];
         $cls = $map[$s] ?? 'badge-pending';
