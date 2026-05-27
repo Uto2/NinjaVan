@@ -161,7 +161,7 @@ if(isset($_POST['register_rider'])){
                 <div class="nv-prefix-wrap" id="phoneWrap" style="display:flex; align-items:center; border-bottom: 2px solid var(--nv-border); transition: border-color 0.2s;">
                     <span class="nv-field-prefix" style="color: var(--nv-muted); font-size: 15px; font-weight: 600; margin-right: 6px;">+63</span>
                     <input type="tel" name="phone" id="phoneInput" class="nv-field" placeholder="9XX XXX XXXX"
-                           value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" required maxlength="10" style="border-bottom:none; padding-left:0; flex:1;">
+                           value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" required maxlength="10" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')" style="border-bottom:none; padding-left:0; flex:1;">
                 </div>
             </div>
 

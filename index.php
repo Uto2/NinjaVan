@@ -502,13 +502,13 @@ include("layout/layout.php");
                 </div>
 
                 <!-- TRACK BAR -->
-                <div class="track-bar">
+                <form class="track-bar" action="/ninjavan/public_track.php" method="GET">
                     <i class="bi bi-search text-muted" style="color:rgba(255,255,255,0.4)!important;"></i>
-                    <input type="text" placeholder="Enter tracking number...">
-                    <button class="btn-nv" style="padding:9px 20px; font-size:13px; border-radius:50px;">
+                    <input type="text" name="trk" placeholder="Enter tracking number..." required>
+                    <button type="submit" class="btn-nv" style="padding:9px 20px; font-size:13px; border-radius:50px; border:none;">
                         Track
                     </button>
-                </div>
+                </form>
             </div>
 
             <!-- RIGHT: SERVICE CARDS -->

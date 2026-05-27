@@ -321,7 +321,7 @@ include "../layout/dashboard_layout.php";
                 <div class="col-md-6">
                     <div class="nv-form-group">
                         <label>Phone Number</label>
-                        <input type="text" name="phone" id="phoneInputStaff" class="nv-input" placeholder="09XX XXX XXXX">
+                        <input type="tel" name="phone" id="phoneInputStaff" class="nv-input" placeholder="09xxxxxxxxx" maxlength="11" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                     </div>
                 </div>
 

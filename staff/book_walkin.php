@@ -82,6 +82,10 @@ if($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if(empty($senderFName) || empty($senderLName) || empty($rcptFName) || empty($rcptLName) || empty($rcptProv) || empty($rcptCity) || empty($rcptBrgy)) {
         $error = "Please fill in all required fields.";
+    } elseif (!preg_match('/^[0-9]{10,11}$/', $senderPhone)) {
+        $error = "Invalid sender phone number. Must be 10-11 digits.";
+    } elseif (!preg_match('/^[0-9]{10,11}$/', $rcptPhone)) {
+        $error = "Invalid recipient phone number. Must be 10-11 digits.";
     }
 
     if(!$error) {
@@ -214,7 +218,7 @@ include "../layout/dashboard_layout.php";
             <div class="row g-3">
                 <div class="col-md-6"><div class="nv-form-group"><label>First Name *</label><input type="text" name="sender_first_name" class="nv-input" required placeholder="e.g. Juan"></div></div>
                 <div class="col-md-6"><div class="nv-form-group"><label>Last Name *</label><input type="text" name="sender_last_name" class="nv-input" required placeholder="e.g. Dela Cruz"></div></div>
-                <div class="col-md-6"><div class="nv-form-group"><label>Phone *</label><input type="text" name="sender_phone" class="nv-input" required placeholder="09xxxxxxxxx"></div></div>
+                <div class="col-md-6"><div class="nv-form-group"><label>Phone *</label><input type="tel" name="sender_phone" class="nv-input" required placeholder="09xxxxxxxxx" maxlength="11" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')"></div></div>
                 <div class="col-12"><div class="nv-form-group"><label>Email (for account)</label><input type="email" name="sender_email" class="nv-input" placeholder="optional@email.com"></div></div>
             </div>
         </div>
@@ -225,7 +229,7 @@ include "../layout/dashboard_layout.php";
             <div class="row g-3">
                 <div class="col-md-6"><div class="nv-form-group"><label>First Name *</label><input type="text" name="rcpt_first_name" class="nv-input" required placeholder="e.g. Maria"></div></div>
                 <div class="col-md-6"><div class="nv-form-group"><label>Last Name *</label><input type="text" name="rcpt_last_name" class="nv-input" required placeholder="e.g. Santos"></div></div>
-                <div class="col-md-6"><div class="nv-form-group"><label>Phone *</label><input type="text" name="rcpt_phone" class="nv-input" required placeholder="09xxxxxxxxx"></div></div>
+                <div class="col-md-6"><div class="nv-form-group"><label>Phone *</label><input type="tel" name="rcpt_phone" class="nv-input" required placeholder="09xxxxxxxxx" maxlength="11" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')"></div></div>
                 
                 <div class="col-md-8">
                     <div class="nv-form-group">

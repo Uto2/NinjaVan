@@ -97,7 +97,7 @@ if(isset($_POST['step1'])){
             <div class="nv-prefix-wrap" id="phoneWrap">
                 <span class="nv-field-prefix">+63</span>
                 <input type="tel" name="phone" id="phoneInput" class="nv-field" placeholder="9XX XXX XXXX"
-                       value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" required maxlength="10">
+                       value="<?= htmlspecialchars($_POST['phone'] ?? '') ?>" required maxlength="10" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
             </div>
         </div>
 

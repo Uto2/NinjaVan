@@ -21,22 +21,43 @@ if(isset($_POST['add_hub'])){
     $city     = trim($_POST['hub_city'] ?? '');
     $province = trim($_POST['hub_province'] ?? '');
     $addr     = "$street, $barangay, $city, $province";
-    $area     = $province; // Use province as the operational area
+    $area     = $province; 
 
-    // Geocode the address
-    $lat = null; $lng = null;
-    $nomUrl = "https://nominatim.openstreetmap.org/search?q=" . urlencode("$city, $province, Philippines") . "&format=json&limit=1";
-    $ctx = stream_context_create(['http' => ['timeout' => 3, 'header' => "User-Agent: NinjaVan PHP/1.0\r\n"]]);
-    $nomRes = @file_get_contents($nomUrl, false, $ctx);
-    if ($nomRes) {
-        $nomData = json_decode($nomRes, true);
-        if (!empty($nomData) && isset($nomData[0]['lat'])) {
-            $lat = (float)$nomData[0]['lat'];
-            $lng = (float)$nomData[0]['lon'];
+    // Manual Lat/Lng
+    $lat = !empty($_POST['hub_lat']) ? (float)$_POST['hub_lat'] : null;
+    $lng = !empty($_POST['hub_lng']) ? (float)$_POST['hub_lng'] : null;
+
+    // Auto-Geocode if manual is missing
+    if (!$lat || !$lng) {
+        $searchQueries = [
+            "$street, $barangay, $city, $province, Philippines",
+            "$barangay, $city, $province, Philippines",
+            "$city, $province, Philippines",
+            "$province, Philippines"
+        ];
+        
+        $ctx = stream_context_create(['http' => ['timeout' => 5, 'header' => "User-Agent: NinjaVan PHP/1.0\r\n"]]);
+        foreach ($searchQueries as $sq) {
+            // Clean up double commas or leading/trailing commas
+            $sq = preg_replace('/, ,/', ', ', $sq);
+            $sq = trim($sq, ', ');
+            
+            $nomUrl = "https://nominatim.openstreetmap.org/search?q=" . urlencode($sq) . "&format=json&limit=1";
+            $nomRes = @file_get_contents($nomUrl, false, $ctx);
+            if ($nomRes) {
+                $nomData = json_decode($nomRes, true);
+                if (!empty($nomData) && isset($nomData[0]['lat'])) {
+                    $lat = (float)$nomData[0]['lat'];
+                    $lng = (float)$nomData[0]['lon'];
+                    break;
+                }
+            }
+            // Small sleep to avoid rate limiting if we have to try multiple queries
+            if (count($searchQueries) > 1) usleep(200000);
         }
     }
 
-    // Sequential ID generation: HUB00001, HUB00002, etc.
+    // Sequential ID generation
     $hubsSnap = $db->getReference('hubs')->getSnapshot();
     $maxIdNum = 0;
     if ($hubsSnap->hasChildren()) {
@@ -77,17 +98,52 @@ if(isset($_POST['edit_hub'])){
     $phone = trim($_POST['hub_phone']);
     $type  = trim($_POST['hub_type']);
     $area  = trim($_POST['hub_area']);
+    
+    // Manual Lat/Lng
+    $lat = !empty($_POST['hub_lat']) ? (float)$_POST['hub_lat'] : null;
+    $lng = !empty($_POST['hub_lng']) ? (float)$_POST['hub_lng'] : null;
 
-    // Geocode the address
-    $lat = null; $lng = null;
-    $nomUrl = "https://nominatim.openstreetmap.org/search?q=" . urlencode($addr) . "&format=json&limit=1";
-    $ctx = stream_context_create(['http' => ['timeout' => 3, 'header' => "User-Agent: NinjaVan PHP/1.0\r\n"]]);
-    $nomRes = @file_get_contents($nomUrl, false, $ctx);
-    if ($nomRes) {
-        $nomData = json_decode($nomRes, true);
-        if (!empty($nomData) && isset($nomData[0]['lat'])) {
-            $lat = (float)$nomData[0]['lat'];
-            $lng = (float)$nomData[0]['lon'];
+    // Auto-Geocode if manual is missing OR if address changed and manual is empty
+    if (!$lat || !$lng) {
+        $searchQueries = [
+            $addr . ", Philippines",
+        ];
+        
+        // Try to extract parts if it's a comma-separated address
+        $parts = explode(',', $addr);
+        if (count($parts) > 1) {
+            $provPart = trim(end($parts));
+            
+            // 2. Try Brgy, City, Province
+            if (count($parts) > 3) {
+                $brgyPart = trim($parts[count($parts)-3]);
+                $cityPart = trim($parts[count($parts)-2]);
+                $searchQueries[] = "$brgyPart, $cityPart, $provPart, Philippines";
+            }
+            // 3. Try City, Province
+            if (count($parts) > 2) {
+                $cityPart = trim($parts[count($parts)-2]);
+                $searchQueries[] = "$cityPart, $provPart, Philippines";
+            }
+            // 4. Try Province alone
+            $searchQueries[] = "$provPart, Philippines";
+        }
+
+        $ctx = stream_context_create(['http' => ['timeout' => 5, 'header' => "User-Agent: NinjaVan PHP/1.0\r\n"]]);
+        foreach ($searchQueries as $sq) {
+            $sq = preg_replace('/, ,/', ', ', $sq);
+            $sq = trim($sq, ', ');
+            $nomUrl = "https://nominatim.openstreetmap.org/search?q=" . urlencode($sq) . "&format=json&limit=1";
+            $nomRes = @file_get_contents($nomUrl, false, $ctx);
+            if ($nomRes) {
+                $nomData = json_decode($nomRes, true);
+                if (!empty($nomData) && isset($nomData[0]['lat'])) {
+                    $lat = (float)$nomData[0]['lat'];
+                    $lng = (float)$nomData[0]['lon'];
+                    break;
+                }
+            }
+            usleep(200000);
         }
     }
 
@@ -313,6 +369,7 @@ include "../layout/dashboard_layout.php";
                     <th>Operational Area</th>
                     <th>Contact Phone</th>
                     <th>Address</th>
+                    <th>GPS (Lat, Lng)</th>
                     <th style="text-align:center;">Staff</th>
                     <th style="text-align:center;">Riders</th>
                     <th style="text-align:center;">Active Parcels</th>
@@ -344,6 +401,13 @@ include "../layout/dashboard_layout.php";
                     <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="<?= htmlspecialchars($h['Hub_Addr'] ?? '') ?>">
                         <?= htmlspecialchars($h['Hub_Addr'] ?? '') ?>
                     </td>
+                    <td style="font-size:11px; color:var(--muted);">
+                        <?php if(isset($h['Hub_Lat']) && isset($h['Hub_Lng'])): ?>
+                            <?= number_format($h['Hub_Lat'], 4) ?>, <?= number_format($h['Hub_Lng'], 4) ?>
+                        <?php else: ?>
+                            <span style="color:var(--amber);"><i class="bi bi-exclamation-triangle"></i> No GPS</span>
+                        <?php endif; ?>
+                    </td>
                     <td style="text-align:center;">
                         <span class="badge-status badge-confirmed" style="padding: 2px 8px; border-radius: 4px;"><?= $h['staff_count'] ?? 0 ?></span>
                     </td>
@@ -362,7 +426,9 @@ include "../layout/dashboard_layout.php";
                                 '<?= addslashes($h['Hub_Addr'] ?? '') ?>',
                                 '<?= addslashes($h['Hub_Phone'] ?? '') ?>',
                                 '<?= addslashes($h['Hub_Type'] ?? '') ?>',
-                                '<?= addslashes($h['Hub_Area'] ?? '') ?>'
+                                '<?= addslashes($h['Hub_Area'] ?? '') ?>',
+                                '<?= addslashes($h['Hub_Lat'] ?? '') ?>',
+                                '<?= addslashes($h['Hub_Lng'] ?? '') ?>'
                             )">
                                 <i class="bi bi-pencil-fill"></i>
                             </button>
@@ -432,7 +498,7 @@ include "../layout/dashboard_layout.php";
                 <div class="col-12">
                     <div class="nv-form-group">
                         <label>Contact Phone Number *</label>
-                        <input type="text" name="hub_phone" id="addHubPhone" class="nv-input" placeholder="e.g. 09171234567" required maxlength="11">
+                        <input type="tel" name="hub_phone" id="addHubPhone" class="nv-input" placeholder="e.g. 09171234567" required maxlength="11" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                     </div>
                 </div>
 
@@ -467,9 +533,33 @@ include "../layout/dashboard_layout.php";
                 </div>
 
                 <div class="col-12">
-                    <div class="nv-form-group">
-                        <label>Street / Building / House No. *</label>
-                        <textarea name="hub_street" class="nv-input" rows="2" placeholder="e.g. M.J. Cuenco Ave, Block 4 Lot 5" required></textarea>
+                    <button type="button" class="btn-nv-ghost w-100" style="font-size:12px; padding:8px;" onclick="toggleAdvanced('add')">
+                        <i class="bi bi-gear"></i> <span id="add_toggle_text">Show Advanced Location Settings</span>
+                    </button>
+                </div>
+
+                <div id="add_advanced_location" style="display:none; width:100%;">
+                    <div class="row g-3 px-3">
+                        <div class="col-md-5">
+                            <div class="nv-form-group">
+                                <label>Latitude</label>
+                                <input type="number" step="any" name="hub_lat" id="add_hub_lat" class="nv-input" placeholder="e.g. 14.5995">
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="nv-form-group">
+                                <label>Longitude</label>
+                                <input type="number" step="any" name="hub_lng" id="add_hub_lng" class="nv-input" placeholder="e.g. 120.9842">
+                            </div>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="button" class="btn-nv w-100" style="padding:10px;" title="Auto-locate from address" onclick="autoLocate('add')">
+                                <i class="bi bi-geo-alt"></i>
+                            </button>
+                        </div>
+                        <div class="col-12">
+                            <p style="font-size:11px; color:var(--muted); margin:0;"><i class="bi bi-info-circle"></i> Use the blue button to automatically find coordinates based on the address above.</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -539,7 +629,7 @@ include "../layout/dashboard_layout.php";
                 <div class="col-12">
                     <div class="nv-form-group">
                         <label>Contact Phone Number *</label>
-                        <input type="text" name="hub_phone" id="edit_hub_phone" class="nv-input" required maxlength="11">
+                        <input type="tel" name="hub_phone" id="edit_hub_phone" class="nv-input" required maxlength="11" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                     </div>
                 </div>
 
@@ -547,6 +637,34 @@ include "../layout/dashboard_layout.php";
                     <div class="nv-form-group">
                         <label>Complete Address *</label>
                         <textarea name="hub_addr" id="edit_hub_addr" class="nv-input" rows="2" required></textarea>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <button type="button" class="btn-nv-ghost w-100" style="font-size:12px; padding:8px;" onclick="toggleAdvanced('edit')">
+                        <i class="bi bi-gear"></i> <span id="edit_toggle_text">Show Advanced Location Settings</span>
+                    </button>
+                </div>
+
+                <div id="edit_advanced_location" style="display:none; width:100%;">
+                    <div class="row g-3 px-3">
+                        <div class="col-md-5">
+                            <div class="nv-form-group">
+                                <label>Latitude</label>
+                                <input type="number" step="any" name="hub_lat" id="edit_hub_lat" class="nv-input">
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="nv-form-group">
+                                <label>Longitude</label>
+                                <input type="number" step="any" name="hub_lng" id="edit_hub_lng" class="nv-input">
+                            </div>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="button" class="btn-nv w-100" style="padding:10px;" title="Auto-locate from address" onclick="autoLocate('edit')">
+                                <i class="bi bi-geo-alt"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -566,22 +684,59 @@ include "../layout/dashboard_layout.php";
 
 <!-- SCRIPTS -->
 <script>
-// Close modals on backdrop click
-document.getElementById('addHubModal').addEventListener('click', function(e){
-    if(e.target === this) this.style.display = 'none';
-});
-document.getElementById('editHubModal').addEventListener('click', function(e){
-    if(e.target === this) this.style.display = 'none';
-});
+function toggleAdvanced(prefix) {
+    const el = document.getElementById(prefix + '_advanced_location');
+    const txt = document.getElementById(prefix + '_toggle_text');
+    if (el.style.display === 'none') {
+        el.style.display = 'block';
+        txt.textContent = 'Hide Advanced Location Settings';
+    } else {
+        el.style.display = 'none';
+        txt.textContent = 'Show Advanced Location Settings';
+    }
+}
 
-function openEditModal(id, name, addr, phone, type, area) {
-    document.getElementById('edit_hub_id').value = id;
-    document.getElementById('edit_hub_name').value = name;
-    document.getElementById('edit_hub_addr').value = addr;
-    document.getElementById('edit_hub_phone').value = phone;
-    document.getElementById('edit_hub_type').value = type;
-    document.getElementById('edit_hub_area').value = area;
-    document.getElementById('editHubModal').style.display = 'flex';
+async function autoLocate(prefix) {
+    let query = '';
+    if (prefix === 'add') {
+        const street = document.getElementsByName('hub_street')[0].value;
+        const brgy = document.getElementById('addBarangay').value;
+        const city = document.getElementById('addCity').value;
+        const prov = document.getElementById('addProvince').value;
+        if (!city || !prov) { alert('Please select at least Province and City first.'); return; }
+        query = `${street}, ${brgy}, ${city}, ${prov}, Philippines`;
+    } else {
+        query = document.getElementById('edit_hub_addr').value + ', Philippines';
+    }
+
+    const btn = event.currentTarget;
+    const oldHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    btn.disabled = true;
+
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'NinjaVan PHP/1.0' } });
+        const data = await res.json();
+
+        if (data && data.length > 0) {
+            document.getElementById(prefix + '_hub_lat').value = data[0].lat;
+            document.getElementById(prefix + '_hub_lng').value = data[0].lon;
+            
+            // If it was hidden, show it to show success
+            if (document.getElementById(prefix + '_advanced_location').style.display === 'none') {
+                toggleAdvanced(prefix);
+            }
+        } else {
+            alert('Could not find precise location for this address. Try making it simpler (e.g. just Barangay and City).');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Geocoding service error. Please try again later.');
+    } finally {
+        btn.innerHTML = oldHtml;
+        btn.disabled = false;
+    }
 }
 // Phone trapping
 document.getElementById('addHubPhone').addEventListener('input', function(e) {

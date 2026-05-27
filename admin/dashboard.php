@@ -87,29 +87,41 @@ include "../layout/dashboard_layout.php";
         </div>
     </div>
     <div class="col-sm-6 col-xl-3">
-        <div class="stat-card green">
-            <div class="stat-icon green"><i class="bi bi-cash-coin"></i></div>
+        <div class="stat-card red">
+            <div class="stat-icon red"><i class="bi bi-cash-coin"></i></div>
             <div class="stat-value">₱<?= number_format($revenue, 0) ?></div>
             <div class="stat-label">Revenue (Delivered)</div>
             <div class="stat-trend up"><i class="bi bi-arrow-up"></i> Collected fees</div>
         </div>
     </div>
     <div class="col-sm-6 col-xl-3">
-        <div class="stat-card blue">
-            <div class="stat-icon blue"><i class="bi bi-people-fill"></i></div>
+        <div class="stat-card red">
+            <div class="stat-icon red"><i class="bi bi-people-fill"></i></div>
             <div class="stat-value"><?= $totalShippers ?></div>
             <div class="stat-label">Registered Shippers</div>
             <div class="stat-trend up"><i class="bi bi-arrow-up"></i> Growing</div>
         </div>
     </div>
     <div class="col-sm-6 col-xl-3">
-        <div class="stat-card amber">
-            <div class="stat-icon amber"><i class="bi bi-exclamation-triangle-fill"></i></div>
+        <div class="stat-card red">
+            <div class="stat-icon red"><i class="bi bi-exclamation-triangle-fill"></i></div>
             <div class="stat-value"><?= $staging ?></div>
             <div class="stat-label">Order Created</div>
             <div class="stat-trend <?= $staging > 0 ? 'down' : 'up' ?>">
                 <i class="bi bi-<?= $staging > 0 ? 'exclamation-circle' : 'check-circle' ?>"></i>
                 <?= $staging > 0 ? 'Needs action' : 'All processed' ?>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ANALYTICS CHART -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="nv-card p-4">
+            <h5 style="font-size:15px; margin-bottom:20px;">7-Day Gross Revenue (Mocked)</h5>
+            <div style="height: 300px; width: 100%;">
+                <canvas id="revenueChart"></canvas>
             </div>
         </div>
     </div>
@@ -196,9 +208,9 @@ include "../layout/dashboard_layout.php";
 
             <?php
             $qstats = [
-                ['Active Riders',     $totalRiders, 'bi-bicycle',          'var(--blue)'],
-                ['Delivered Orders',  $delivered,   'bi-check-circle-fill','var(--green)'],
-                ['Order Created',    $staging,     'bi-hourglass-split',  'var(--amber)'],
+                ['Active Riders',     $totalRiders, 'bi-bicycle',          'var(--red)'],
+                ['Delivered Orders',  $delivered,   'bi-check-circle-fill','var(--ink)'],
+                ['Order Created',    $staging,     'bi-hourglass-split',  'var(--red)'],
             ];
             foreach($qstats as [$label, $val, $icon, $color]):
             ?>
@@ -290,5 +302,74 @@ include "../layout/dashboard_layout.php";
         </table>
     </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const ctx = document.getElementById('revenueChart').getContext('2d');
+        
+        const baseRev = <?= $revenue > 0 ? $revenue : 15000 ?>;
+        const labels = [];
+        const dataPoints = [];
+        
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            labels.push(d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+            
+            let val = baseRev * (1 + (Math.random() * 0.4 - 0.2));
+            if(i === 0) val = <?= $revenue ?>; // Today
+            dataPoints.push(Math.round(val));
+        }
+
+        const isDark = document.documentElement.classList.contains('dark-theme') || localStorage.getItem('theme') === 'dark';
+        const gridColor = isDark ? '#2c2c2e' : '#e8e6e1';
+        const textColor = isDark ? '#9ca3af' : '#8a8580';
+
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Revenue (₱)',
+                    data: dataPoints,
+                    backgroundColor: '#E5202B',
+                    borderRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: isDark ? '#1c1c1e' : '#ffffff',
+                        titleColor: isDark ? '#f3f4f6' : '#0a0a0a',
+                        bodyColor: isDark ? '#d1d5db' : '#0a0a0a',
+                        borderColor: isDark ? '#3f3f46' : '#e8e6e1',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(context) {
+                                return '₱ ' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: gridColor, drawBorder: false },
+                        ticks: { color: textColor, padding: 10, callback: function(value) { return '₱' + value; } }
+                    },
+                    x: {
+                        grid: { display: false, drawBorder: false },
+                        ticks: { color: textColor, padding: 10 }
+                    }
+                }
+            }
+        });
+    });
+</script>
 
 <?php include "../layout/dashboard_footer.php"; ?>

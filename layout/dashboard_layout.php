@@ -27,6 +27,12 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+        // Prevent FOUC (Flash of Unstyled Content)
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark-theme');
+        }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($title ?? 'Dashboard') ?> — NinjaVan</title>
@@ -41,24 +47,24 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
            NINJAVAN DASHBOARD — DESIGN SYSTEM
         ============================================= */
         :root {
-            --red:          #e8002d;
+            --red:          #E5202B;
             --red-dark:     #b80024;
-            --red-glow:     rgba(232,0,45,0.18);
-            --ink:          #0a0a0a;
-            --ink-2:        #1c1c1e;
-            --ink-3:        #2c2c2e;
-            --surface:      #f8f7f5;
+            --red-glow:     rgba(229,32,43,0.18);
+            --ink:          #151515;
+            --ink-2:        #2C2C2C;
+            --ink-3:        #4A4A4A;
+            --surface:      #F4F6F8;
             --surface-2:    #ffffff;
             --border:       #e8e6e1;
             --border-2:     #d4d0c8;
             --muted:        #8a8580;
             --muted-2:      #b8b4ad;
-            --green:        #00b37d;
-            --green-soft:   rgba(0,179,125,0.1);
-            --amber:        #f59e0b;
-            --amber-soft:   rgba(245,158,11,0.1);
-            --blue:         #3b82f6;
-            --blue-soft:    rgba(59,130,246,0.1);
+            --green:        #151515; /* Fallbacks to brand */
+            --green-soft:   rgba(21,21,21,0.1);
+            --amber:        #151515;
+            --amber-soft:   rgba(21,21,21,0.1);
+            --blue:         #151515;
+            --blue-soft:    rgba(21,21,21,0.1);
 
             /* Sidebar */
             --sb-w:         260px;
@@ -74,6 +80,21 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
             --shadow:       0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.05);
             --shadow-lg:    0 8px 32px rgba(0,0,0,0.1);
             --trans:        all 0.22s cubic-bezier(0.4,0,0.2,1);
+            --surface-glass: rgba(248, 247, 245, 0.75);
+        }
+
+        :root.dark-theme {
+            --surface:      #121212;
+            --surface-2:    #1c1c1e;
+            --surface-glass: rgba(18, 18, 18, 0.75);
+            --ink:          #f3f4f6;
+            --ink-2:        #d1d5db;
+            --ink-3:        #9ca3af;
+            --border:       #2c2c2e;
+            --border-2:     #3f3f46;
+            --muted:        #9ca3af;
+            --muted-2:      #6b7280;
+            --shadow:       0 1px 3px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.4);
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -85,6 +106,7 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            transition: background-color 0.3s, color 0.3s;
         }
 
         h1,h2,h3,h4,h5,h6 {
@@ -99,8 +121,9 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
             position: fixed;
             top: 0; left: var(--sb-w); right: 0;
             height: var(--nav-h);
-            background: rgba(248,247,245,0.92);
-            backdrop-filter: blur(12px);
+            background: var(--surface-glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
@@ -617,9 +640,9 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
         .stat-card:hover::after { transform: scale(1.3); opacity: 0.1; }
 
         .stat-card.red::after   { background: var(--red); }
-        .stat-card.green::after { background: var(--green); }
-        .stat-card.amber::after { background: var(--amber); }
-        .stat-card.blue::after  { background: var(--blue); }
+        .stat-card.green::after { background: var(--ink); }
+        .stat-card.amber::after { background: var(--red); }
+        .stat-card.blue::after  { background: var(--ink); }
 
         .stat-icon {
             width: 44px; height: 44px;
@@ -629,10 +652,10 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
             margin-bottom: 16px;
         }
 
-        .stat-icon.red   { background: rgba(232,0,45,0.08);   color: var(--red); }
-        .stat-icon.green { background: var(--green-soft);      color: var(--green); }
-        .stat-icon.amber { background: var(--amber-soft);      color: var(--amber); }
-        .stat-icon.blue  { background: var(--blue-soft);       color: var(--blue); }
+        .stat-icon.red   { background: rgba(229,32,43,0.08);   color: var(--red); }
+        .stat-icon.green { background: rgba(21,21,21,0.08);      color: var(--ink); }
+        .stat-icon.amber { background: rgba(229,32,43,0.08);      color: var(--red); }
+        .stat-icon.blue  { background: rgba(21,21,21,0.08);       color: var(--ink); }
 
         .stat-value {
             font-family: 'Sora', sans-serif;
@@ -657,8 +680,8 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
             border-radius: 20px;
         }
 
-        .stat-trend.up   { background: var(--green-soft); color: var(--green); }
-        .stat-trend.down { background: rgba(239,68,68,0.08); color: #ef4444; }
+        .stat-trend.up   { background: rgba(229,32,43,0.08); color: var(--red); }
+        .stat-trend.down { background: rgba(21,21,21,0.08); color: var(--ink); }
         .stat-trend.neu  { background: rgba(138,133,128,0.08); color: var(--muted); }
 
         /* =============================================
@@ -696,8 +719,42 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
 
         .nv-table tbody tr:last-child td { border-bottom: none; }
 
+        /* =============================================
+           SKELETON LOADER
+        ============================================= */
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+        .skeleton-box {
+            display: inline-block;
+            height: 1.2em;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+            background-color: var(--border);
+            border-radius: 4px;
+        }
+        .skeleton-box::after {
+            position: absolute;
+            top: 0; right: 0; bottom: 0; left: 0;
+            transform: translateX(-100%);
+            background-image: linear-gradient(90deg, rgba(255,255,255,0) 0, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0.5) 60%, rgba(255,255,255,0));
+            animation: shimmer 2s infinite;
+            content: '';
+        }
+        :root.dark-theme .skeleton-box::after {
+            background-image: linear-gradient(90deg, rgba(255,255,255,0) 0, rgba(255,255,255,0.05) 20%, rgba(255,255,255,0.1) 60%, rgba(255,255,255,0));
+        }
+
+        @keyframes fadeInRow {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         .nv-table tbody tr {
             transition: background 0.15s;
+            animation: fadeInRow 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
 
         .nv-table tbody tr:hover td {
@@ -727,15 +784,15 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
             background: currentColor;
         }
 
-        .badge-pending   { background: var(--amber-soft); color: #b45309; }
-        .badge-confirmed { background: var(--blue-soft);  color: #1d4ed8; }
-        .badge-picked    { background: rgba(139,92,246,0.1); color: #7c3aed; }
-        .badge-transit   { background: rgba(6,182,212,0.1); color: #0891b2; }
-        .badge-delivery  { background: rgba(249,115,22,0.1); color: #c2410c; }
-        .badge-delivered { background: var(--green-soft); color: #15803d; }
-        .badge-failed    { background: rgba(239,68,68,0.08); color: #dc2626; }
+        .badge-pending   { background: rgba(229,32,43,0.1); color: var(--red); }
+        .badge-confirmed { background: rgba(21,21,21,0.1);  color: var(--ink); }
+        .badge-picked    { background: rgba(229,32,43,0.1); color: var(--red); }
+        .badge-transit   { background: rgba(21,21,21,0.1); color: var(--ink); }
+        .badge-delivery  { background: rgba(229,32,43,0.1); color: var(--red); }
+        .badge-delivered { background: rgba(21,21,21,0.1); color: var(--ink); }
+        .badge-failed    { background: rgba(229,32,43,0.08); color: var(--red); }
         .badge-cancelled { background: rgba(138,133,128,0.08); color: var(--muted); }
-        .badge-active    { background: var(--green-soft); color: #15803d; }
+        .badge-active    { background: rgba(229,32,43,0.1); color: var(--red); }
         .badge-inactive  { background: rgba(138,133,128,0.08); color: var(--muted); }
 
         /* =============================================
@@ -762,7 +819,7 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
             background: var(--red-dark);
             color: #fff;
             transform: translateY(-1px);
-            box-shadow: 0 6px 16px rgba(232,0,45,0.3);
+            box-shadow: 0 6px 16px var(--red-glow);
         }
 
         .btn-nv-ghost {
@@ -1012,26 +1069,19 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
 </head>
 <body>
 
-<!-- =============================================
-     SIDEBAR OVERLAY (mobile)
-============================================= -->
 <div class="sb-overlay" id="sbOverlay" onclick="closeSidebar()"></div>
 
-<!-- =============================================
-     SIDEBAR
-============================================= -->
 <aside class="nv-sidebar">
 <div class="sb-inner">
 
     <!-- Brand -->
-    <a href="/ninjavan/index.php" class="sb-brand">
-        <div class="sb-brand-icon"><i class="bi bi-box-seam-fill"></i></div>
-        <span class="sb-brand-text">ninja<span>van</span></span>
+    <a href="/ninjavan/index.php" class="sb-brand" style="justify-content: center; padding: 24px 20px; text-decoration: none;">
+        <div style="font-family:'Poppins', sans-serif; font-weight:800; font-size:26px; color:#ffffff; letter-spacing:-1px;">ninja<span style="color:#E5202B;">van</span></div>
     </a>
 
     <!-- Role badge -->
     <div class="sb-role-badge">
-        <div class="sb-role-dot"></div>
+        <div class="sb-role-dot" style="background: var(--red); box-shadow: 0 0 6px var(--red);"></div>
         <div>
             <div class="sb-role-label">Logged in as <?= htmlspecialchars(ucfirst($role)) ?></div>
             <div class="sb-role-name"><?= htmlspecialchars($name) ?></div>
@@ -1250,6 +1300,9 @@ if (($role === 'staff' || $role === 'rider') && !empty($_SESSION['hub_id'])) {
     </div>
 
     <div class="topbar-right">
+        <button class="topbar-icon-btn" id="themeToggleBtn" title="Toggle Dark Mode">
+            <i class="bi bi-moon-fill" id="themeIcon"></i>
+        </button>
         <!-- Notification Bell -->
         <div style="position:relative;" id="notifWrap">
             <button class="topbar-icon-btn" id="notifBtn" onclick="toggleNotifDropdown()" aria-label="Notifications">
@@ -1335,14 +1388,42 @@ showToast('<?= addslashes($_SESSION['toast_success']) ?>', 'success');
 showToast('<?= addslashes($_SESSION['toast_error']) ?>', 'error');
 <?php unset($_SESSION['toast_error']); endif; ?>
 
-function toggleSidebar(){
-    document.querySelector('.nv-sidebar').classList.toggle('open');
-    document.getElementById('sbOverlay').classList.toggle('show');
-}
-function closeSidebar(){
-    document.querySelector('.nv-sidebar').classList.remove('open');
-    document.getElementById('sbOverlay').classList.remove('show');
-}
+    // Sidebar logic
+    const sbOverlay = document.getElementById('sbOverlay');
+    const sidebar = document.querySelector('.nv-sidebar');
+    function toggleSidebar(){
+        sidebar.classList.toggle('open');
+        sbOverlay.classList.toggle('show');
+    }
+    function closeSidebar(){
+        sidebar.classList.remove('open');
+        sbOverlay.classList.remove('show');
+    }
+
+    // Theme Toggle Logic
+    const themeBtn = document.getElementById('themeToggleBtn');
+    const themeIcon = document.getElementById('themeIcon');
+    const docEl = document.documentElement;
+
+    function updateThemeIcon() {
+        if (docEl.classList.contains('dark-theme')) {
+            themeIcon.className = 'bi bi-sun-fill';
+            themeIcon.style.color = '#f59e0b';
+        } else {
+            themeIcon.className = 'bi bi-moon-fill';
+            themeIcon.style.color = '';
+        }
+    }
+
+    if (themeBtn) {
+        updateThemeIcon();
+        themeBtn.addEventListener('click', () => {
+            docEl.classList.toggle('dark-theme');
+            const isDark = docEl.classList.contains('dark-theme');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            updateThemeIcon();
+        });
+    }
 
 // ─── Notification Bell ───────────────────────────────────────────────────────
 let notifOpen = false;

@@ -7,5 +7,9 @@
         "audit": {
             "block-insecure": false
         }
+    },
+    "require-dev": {
+        "phpstan/phpstan": "*",
+        "phpunit/phpunit": "*"
     }
 }

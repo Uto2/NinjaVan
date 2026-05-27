@@ -201,6 +201,34 @@ include "../layout/dashboard_layout.php";
           isFirstLoad = false;
           return;
       }
+      // Show skeleton loaders during fetch
+      const tbody = document.querySelector('.nv-table tbody');
+      if (tbody) {
+          tbody.innerHTML = `
+              <tr>
+                  <td><span class="skeleton-box" style="width: 80px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 120px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 150px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 90px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 50px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 100px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 130px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 80px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 80px;"></span></td>
+              </tr>
+              <tr>
+                  <td><span class="skeleton-box" style="width: 80px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 120px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 150px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 90px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 50px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 100px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 130px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 80px;"></span></td>
+                  <td><span class="skeleton-box" style="width: 80px;"></span></td>
+              </tr>
+          `;
+      }
       
       // Silently fetch the updated page and replace the DOM elements
       fetch(window.location.href)
